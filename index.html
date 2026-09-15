@@ -147,8 +147,7 @@
         .mode-card h3 { margin-top: 8px; font-size: 1.2rem; font-weight: 700; }
         .mode-card p { margin-top: 10px; color: var(--fg3); font-size: .92rem; }
 
-        .download-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 20px; align-items: stretch; }
-        @media (max-width: 820px) { .download-grid { grid-template-columns: 1fr; } }
+        .download-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; align-items: stretch; }
         .download-card { border-radius: 16px; padding: 34px; display: flex; flex-direction: column; gap: 16px; }
         .download-card.primary { background: linear-gradient(155deg, var(--brand) 0%, var(--brand-h) 100%); color: #ffffff; }
         .download-card.secondary { border: 1px solid var(--stroke1); background: var(--bg2); }
@@ -312,8 +311,8 @@
             <div class="wrap">
                 <div class="section-head">
                     <div class="eyebrow mono">Get Warf</div>
-                    <h2>Install it in your DAW, or just open it.</h2>
-                    <p>Same pitch-tracking engine either way — the VST3 plugin adds audio pass-through and host automation on top of what the browser version does.</p>
+                    <h2>Install it in your DAW, run it standalone, or just open it.</h2>
+                    <p>Same pitch-tracking engine every way — no DAW required for the standalone app or the browser version.</p>
                 </div>
                 <div class="download-grid">
                     <div class="download-card primary">
@@ -332,6 +331,19 @@
                         <div class="file-meta">
                             <span>v0.1.0 Beta</span>
                             <span>Windows 10/11 &middot; x64 &middot; VST3</span>
+                        </div>
+                    </div>
+                    <div class="download-card secondary">
+                        <svg class="platform-icon" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                        <h3>Warf (Beta) — Standalone</h3>
+                        <p>A native desktop app with its own audio-device and MIDI-output picker — no DAW, no browser. Same engine, same controls as the plugin.</p>
+                        <a class="btn btn-ghost" href="downloads/Warf_0.1.0_Beta_Standalone_x64.zip">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 21h16"/></svg>
+                            Download (.zip, portable)
+                        </a>
+                        <div class="file-meta">
+                            <span>v0.1.0 Beta</span>
+                            <span>Windows 10/11 &middot; x64</span>
                         </div>
                     </div>
                     <div class="download-card secondary">

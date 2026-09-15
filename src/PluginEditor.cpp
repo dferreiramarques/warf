@@ -55,7 +55,12 @@ WarfAudioProcessorEditor::WarfAudioProcessorEditor (WarfAudioProcessor& p)
     fixedVelocityValueAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, ParameterIDs::fixedVelocityValue, fixedVelocityValueSlider);
     fixedVelocityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (apvts, ParameterIDs::fixedVelocity, fixedVelocityToggle);
 
-    setSize (420, 420);
+    // A bit taller than the laid-out content needs, and resizable - the Standalone build adds its
+    // own "audio input muted" banner above this editor (JUCE's automatic feedback-loop guard for
+    // an effect with both audio in and out) which a fixed 420x420 doesn't leave room for.
+    setResizable (true, true);
+    setResizeLimits (360, 420, 700, 700);
+    setSize (420, 460);
     startTimerHz (20);
 }
 
