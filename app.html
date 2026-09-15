@@ -105,6 +105,7 @@
 
         .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--stroke1); flex-shrink: 0; }
         .status-dot.live { background: var(--ok); box-shadow: 0 0 0 3px var(--brand-bg); }
+        .status-dot.recording { background: var(--danger); box-shadow: 0 0 0 3px rgba(220, 38, 38, .18); }
         .status-row { display: flex; align-items: center; gap: 8px; font-size: .82rem; color: var(--fg4); margin-top: 14px; }
 
         .readout { text-align: center; padding: 36px 0 28px; }
@@ -171,6 +172,10 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4M9 22h6"/></svg>
                         Start Listening
                     </button>
+                    <button class="btn btn-ghost" id="toggleRecordBtn">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="7"/></svg>
+                        Start Recording
+                    </button>
                     <select id="midiOutputSelect">
                         <option value="">No MIDI output selected</option>
                     </select>
@@ -178,6 +183,16 @@
                 <div class="status-row">
                     <span class="status-dot" id="statusDot"></span>
                     <span id="statusText">Microphone not started</span>
+                </div>
+                <div class="status-row">
+                    <span class="status-dot" id="recordDot"></span>
+                    <span id="recordStatusText">Not recording</span>
+                </div>
+                <div class="file-actions" id="recordingActions" hidden>
+                    <button class="btn btn-ghost" id="downloadRecordingBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 21h16"/></svg>
+                        Download Recording (MIDI)
+                    </button>
                 </div>
             </div>
 
@@ -451,6 +466,21 @@
         let midiAccess = null, midiOutput = null;
         let smoothedRms = 0;
 
+        // ===== Recording (live session -> downloadable MIDI file) =====
+        // Runs alongside the live listen/MIDI-out path rather than replacing it: the same
+        // PitchDetector hop feeds both noteTracker (for the on-screen readout and Web MIDI out)
+        // and, only while recording, a separate recordingNoteTracker with its own fresh state -
+        // so a note already sounding before recording started doesn't leak a stray note-off into
+        // the recording, and a note still sounding when recording stops gets a proper note-off.
+        let recordingNoteTracker = new NoteTracker();
+        let isRecording = false;
+        let micStartedByRecording = false;
+        let recordedEvents = [];
+        let recordedSamplesSoFar = 0;
+        let recordingSampleRateAtStart = 44100;
+        let lastRecordingMidiBytes = null;
+        let lastRecordingMidiFilename = 'warf-recording.mid';
+
         function readSettings() {
             const sensitivity = parseFloat(document.getElementById('sensitivity').value);
             return {
@@ -515,12 +545,26 @@
             // inline (no separate module file to serve) and is what Kerf's own PCM capture uses too.
             processorNode = audioCtx.createScriptProcessor(2048, 1, 1);
             processorNode.onaudioprocess = (e) => {
-                noteTracker.setSettings(readSettings());
+                const settings = readSettings();
+                noteTracker.setSettings(settings);
+                if (isRecording) recordingNoteTracker.setSettings(settings);
+
                 const input = e.inputBuffer.getChannelData(0);
-                pitchDetector.pushSamples(input, (hop) => {
+                const blockStartSample = recordedSamplesSoFar;
+                pitchDetector.pushSamples(input, (hop, idxInBlock) => {
                     noteTracker.processHop(hop, sendNoteOn, sendNoteOff);
                     updateReadout(hop);
+
+                    if (isRecording) {
+                        const sampleIndex = blockStartSample + idxInBlock;
+                        recordingNoteTracker.processHop(
+                            hop,
+                            (note, velocity) => recordedEvents.push({ type: 'on', note, velocity, sampleIndex }),
+                            (note) => recordedEvents.push({ type: 'off', note, sampleIndex })
+                        );
+                    }
                 });
+                if (isRecording) recordedSamplesSoFar += input.length;
             };
             sourceNode.connect(processorNode);
             // Connecting to destination is required by some browsers for onaudioprocess to fire,
@@ -539,6 +583,7 @@
         }
 
         function stopMic() {
+            if (isRecording) finalizeRecording();
             noteTracker.allNotesOff(sendNoteOff);
             if (processorNode) { processorNode.disconnect(); processorNode.onaudioprocess = null; processorNode = null; }
             if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
@@ -566,6 +611,84 @@
             } finally {
                 btn.disabled = false;
             }
+        });
+
+        async function startRecording() {
+            if (isRecording) return;
+
+            if (!audioCtx) {
+                micStartedByRecording = true;
+                await startMic(); // lets any getUserMedia error propagate to the click handler below
+            } else {
+                micStartedByRecording = false;
+            }
+
+            recordingNoteTracker = new NoteTracker();
+            recordingNoteTracker.setSettings(readSettings());
+            recordedEvents = [];
+            recordedSamplesSoFar = 0;
+            recordingSampleRateAtStart = audioCtx.sampleRate;
+            lastRecordingMidiBytes = null;
+
+            isRecording = true;
+            document.getElementById('recordDot').classList.add('recording');
+            document.getElementById('recordStatusText').textContent = 'Recording...';
+            document.getElementById('recordingActions').hidden = true;
+            const recordBtn = document.getElementById('toggleRecordBtn');
+            recordBtn.classList.remove('btn-ghost');
+            recordBtn.classList.add('btn-danger');
+            recordBtn.lastChild.textContent = ' Stop Recording';
+        }
+
+        // Turns the events captured since startRecording() into a downloadable MIDI file, and
+        // stops recording (but not necessarily the mic - see micStartedByRecording). Called both
+        // from the Stop Recording button and from stopMic() if the mic is stopped mid-recording.
+        function finalizeRecording() {
+            if (!isRecording) return;
+            isRecording = false;
+
+            recordingNoteTracker.allNotesOff((note) => recordedEvents.push({ type: 'off', note, sampleIndex: recordedSamplesSoFar }));
+
+            const noteOnCount = recordedEvents.filter((e) => e.type === 'on').length;
+            if (noteOnCount > 0) {
+                lastRecordingMidiBytes = buildMidiFile(recordedEvents, recordingSampleRateAtStart, readSettings());
+                lastRecordingMidiFilename = 'warf-recording-' + new Date().toISOString().replace(/[:.]/g, '-') + '.mid';
+            } else {
+                lastRecordingMidiBytes = null;
+            }
+
+            document.getElementById('recordDot').classList.remove('recording');
+            document.getElementById('recordStatusText').textContent = noteOnCount === 0
+                ? 'Recording stopped - no notes detected.'
+                : noteOnCount + ' note' + (noteOnCount === 1 ? '' : 's') + ' recorded (' + (recordedSamplesSoFar / recordingSampleRateAtStart).toFixed(1) + 's).';
+            document.getElementById('recordingActions').hidden = noteOnCount === 0;
+
+            const recordBtn = document.getElementById('toggleRecordBtn');
+            recordBtn.classList.add('btn-ghost');
+            recordBtn.classList.remove('btn-danger');
+            recordBtn.lastChild.textContent = ' Start Recording';
+        }
+
+        document.getElementById('toggleRecordBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('toggleRecordBtn');
+            if (isRecording) {
+                finalizeRecording();
+                if (micStartedByRecording) stopMic();
+                return;
+            }
+            btn.disabled = true;
+            try {
+                await startRecording();
+            } catch (err) {
+                console.error('Microphone access failed', err);
+                document.getElementById('recordStatusText').textContent = 'Microphone access denied or unavailable';
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        document.getElementById('downloadRecordingBtn').addEventListener('click', () => {
+            if (lastRecordingMidiBytes) downloadMidi(lastRecordingMidiBytes, lastRecordingMidiFilename);
         });
 
         // ===== Web MIDI output =====

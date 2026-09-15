@@ -49,6 +49,13 @@ input, but there's nowhere for the MIDI to go — check your host's docs first.
     tracking in the browser, and sends the resulting MIDI notes to a Web MIDI output port.
     Chrome/Edge only (Web MIDI isn't supported in Firefox or Safari); needs a virtual MIDI port
     (e.g. loopMIDI on Windows) to actually reach a DAW.
+  - **Record**: a second, independent control next to Start Listening. Start Recording captures
+    the same live session's note events (starting the mic itself if it isn't already running) into
+    a separate `NoteTracker` instance with its own fresh state, so a note already sounding before
+    the recording began doesn't leak into it. Stop Recording flushes any still-sounding note,
+    builds a downloadable MIDI file from what was captured, and - only if recording was the one
+    that started the mic - stops the mic too (if you were already Listening first, Stop Recording
+    leaves that session running). No MIDI output device needed for this path either.
   - **File**: upload a WAV (or anything `AudioContext.decodeAudioData` supports), and it runs the
     same engine offline over the whole buffer — processed in chunks via `setTimeout` so a long
     file doesn't freeze the tab — then writes the resulting notes out as a downloadable Standard
