@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>
+        (function () {
+            var saved = localStorage.getItem('theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', saved);
+        })();
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#14b8a6">
+    <meta name="description" content="Warf listens to a monophonic instrument or voice through your microphone and turns it into live MIDI note events, right in your browser.">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%230a0a0a' width='192' height='192'/><text x='96' y='130' font-family='Consolas, monospace' font-size='140' font-weight='bold' fill='%2314b8a6' text-anchor='middle'>W</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>Warf — audio to MIDI</title>
+    <style>
+        :root {
+            --bg1: #ffffff; --bg2: #f5f5f5; --bg3: #ebebeb; --bg4: #e0e0e0;
+            --fg1: #242424; --fg2: #424242; --fg3: #616161; --fg4: #898989;
+            --stroke1: #d9d9d9; --stroke2: #e6e6e6;
+            --brand: #0d9488; --brand-h: #0f766e; --brand-fg: #ffffff; --brand-bg: rgba(13, 148, 136, .08);
+            --danger: #dc2626; --ok: #16a34a;
+            --shadow: 0 8px 24px rgba(20, 20, 30, .08);
+            color-scheme: light;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg1: #121212; --bg2: #1a1a1a; --bg3: #242424; --bg4: #303030;
+                --fg1: #f5f5f5; --fg2: #d6d6d6; --fg3: #a3a3a3; --fg4: #737373;
+                --stroke1: #333333; --stroke2: #2a2a2a;
+                --brand: #2dd4bf; --brand-h: #5eead4; --brand-fg: #0a0a0a; --brand-bg: rgba(45, 212, 191, .12);
+                --shadow: 0 12px 32px rgba(0, 0, 0, .45);
+                color-scheme: dark;
+            }
+        }
+        :root[data-theme="dark"] {
+            --bg1: #121212; --bg2: #1a1a1a; --bg3: #242424; --bg4: #303030;
+            --fg1: #f5f5f5; --fg2: #d6d6d6; --fg3: #a3a3a3; --fg4: #737373;
+            --stroke1: #333333; --stroke2: #2a2a2a;
+            --brand: #2dd4bf; --brand-h: #5eead4; --brand-fg: #0a0a0a; --brand-bg: rgba(45, 212, 191, .12);
+            --shadow: 0 12px 32px rgba(0, 0, 0, .45);
+            color-scheme: dark;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--bg1); color: var(--fg1);
+            font-family: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            line-height: 1.5; -webkit-font-smoothing: antialiased;
+            min-height: 100vh;
+        }
+        .mono { font-family: 'JetBrains Mono', 'Courier New', monospace; }
+        a { color: inherit; }
+        .wrap { max-width: 720px; margin: 0 auto; padding: 0 20px; }
+
+        header {
+            border-bottom: 1px solid var(--stroke2);
+            padding: 16px 0;
+        }
+        .header-inner { display: flex; align-items: center; justify-content: space-between; }
+        .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.05rem; text-decoration: none; }
+        .brand-mark {
+            width: 30px; height: 30px; border-radius: 7px; background: #0a0a0a; color: var(--brand);
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 17px; flex-shrink: 0;
+        }
+        header nav { display: flex; gap: 20px; align-items: center; font-size: .88rem; }
+        header nav a { color: var(--fg3); text-decoration: none; }
+        header nav a:hover { color: var(--fg1); }
+
+        main { padding: 40px 0 80px; }
+
+        .panel {
+            border: 1px solid var(--stroke1);
+            border-radius: 16px;
+            background: var(--bg2);
+            padding: 28px;
+            box-shadow: var(--shadow);
+        }
+        .panel + .panel { margin-top: 20px; }
+
+        .transport { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+        .btn {
+            display: inline-flex; align-items: center; gap: 9px; padding: 12px 20px; border-radius: 9px;
+            font-weight: 600; font-size: .92rem; border: 1px solid transparent; cursor: pointer;
+            white-space: nowrap; font-family: inherit;
+        }
+        .btn-primary { background: var(--brand); color: var(--brand-fg); }
+        .btn-primary:hover { background: var(--brand-h); }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-danger:hover { filter: brightness(1.1); }
+        .btn[disabled] { opacity: .5; cursor: not-allowed; }
+        .btn svg { width: 17px; height: 17px; }
+
+        select {
+            font-family: inherit; font-size: .88rem; padding: 10px 12px; border-radius: 8px;
+            border: 1px solid var(--stroke1); background: var(--bg1); color: var(--fg1); flex: 1; min-width: 160px;
+        }
+
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--stroke1); flex-shrink: 0; }
+        .status-dot.live { background: var(--ok); box-shadow: 0 0 0 3px var(--brand-bg); }
+        .status-row { display: flex; align-items: center; gap: 8px; font-size: .82rem; color: var(--fg4); margin-top: 14px; }
+
+        .readout { text-align: center; padding: 36px 0 28px; }
+        .readout-note { font-size: clamp(3rem, 12vw, 4.5rem); font-weight: 800; letter-spacing: -0.02em; font-family: 'JetBrains Mono', monospace; color: var(--fg1); }
+        .readout-note.silent { color: var(--fg4); }
+        .readout-sub { margin-top: 8px; font-size: .92rem; color: var(--fg3); font-family: 'JetBrains Mono', monospace; }
+
+        .meter { height: 6px; border-radius: 3px; background: var(--bg3); overflow: hidden; margin-top: 18px; }
+        .meter-fill { height: 100%; width: 0%; background: var(--brand); transition: width .05s linear; }
+
+        .controls-grid { display: grid; grid-template-columns: 1fr; gap: 18px; margin-top: 4px; }
+        .control-row { display: flex; align-items: center; gap: 16px; }
+        .control-label { flex: 0 0 150px; font-size: .86rem; color: var(--fg2); }
+        .control-row input[type="range"] { flex: 1; accent-color: var(--brand); }
+        .control-value { flex: 0 0 56px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: .82rem; color: var(--fg4); }
+        .control-row.toggle { justify-content: space-between; }
+        .switch { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch-track { position: absolute; inset: 0; background: var(--stroke1); border-radius: 999px; cursor: pointer; transition: background .15s; }
+        .switch-track::before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .15s; }
+        .switch input:checked + .switch-track { background: var(--brand); }
+        .switch input:checked + .switch-track::before { transform: translateX(18px); }
+
+        .section-title { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--fg4); margin-bottom: 16px; }
+
+        .note-banner {
+            border: 1px solid var(--stroke2); border-radius: 10px; padding: 12px 14px; font-size: .84rem;
+            color: var(--fg3); background: var(--bg1);
+        }
+        .note-banner code { font-family: 'JetBrains Mono', monospace; background: var(--bg3); padding: 1px 5px; border-radius: 4px; }
+
+        footer { border-top: 1px solid var(--stroke2); padding: 24px 0; font-size: .82rem; color: var(--fg4); text-align: center; }
+        footer a { color: var(--fg3); text-decoration: none; }
+        footer a:hover { color: var(--brand); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="wrap header-inner">
+            <a class="brand" href="index.html">
+                <span class="brand-mark">W</span>
+                Warf
+            </a>
+            <nav>
+                <a href="index.html">About</a>
+                <a href="https://github.com/dferreiramarques/warf" target="_blank" rel="noopener">GitHub</a>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <div class="wrap">
+            <div class="panel">
+                <div class="transport">
+                    <button class="btn btn-primary" id="toggleMicBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4M9 22h6"/></svg>
+                        Start Listening
+                    </button>
+                    <select id="midiOutputSelect">
+                        <option value="">No MIDI output selected</option>
+                    </select>
+                </div>
+                <div class="status-row">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">Microphone not started</span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="readout">
+                    <div class="readout-note silent" id="noteReadout">--</div>
+                    <div class="readout-sub" id="noteSub">Listening for a single note or voice line...</div>
+                </div>
+                <div class="meter"><div class="meter-fill" id="levelMeter"></div></div>
+            </div>
+
+            <div class="panel">
+                <div class="section-title">Detection</div>
+                <div class="controls-grid">
+                    <div class="control-row">
+                        <span class="control-label">Sensitivity</span>
+                        <input type="range" id="sensitivity" min="0" max="1" step="0.01" value="0.5">
+                        <span class="control-value" id="sensitivityValue">0.50</span>
+                    </div>
+                    <div class="control-row">
+                        <span class="control-label">Gate Threshold (dB)</span>
+                        <input type="range" id="gate" min="-60" max="-10" step="1" value="-40">
+                        <span class="control-value" id="gateValue">-40</span>
+                    </div>
+                    <div class="control-row">
+                        <span class="control-label">Transpose (st)</span>
+                        <input type="range" id="transpose" min="-24" max="24" step="1" value="0">
+                        <span class="control-value" id="transposeValue">0</span>
+                    </div>
+                    <div class="control-row">
+                        <span class="control-label">MIDI Channel</span>
+                        <input type="range" id="midiChannel" min="1" max="16" step="1" value="1">
+                        <span class="control-value" id="midiChannelValue">1</span>
+                    </div>
+                    <div class="control-row toggle">
+                        <span class="control-label">Fixed Velocity</span>
+                        <label class="switch">
+                            <input type="checkbox" id="fixedVelocity">
+                            <span class="switch-track"></span>
+                        </label>
+                    </div>
+                    <div class="control-row">
+                        <span class="control-label">Fixed Velocity Value</span>
+                        <input type="range" id="fixedVelocityValue" min="1" max="127" step="1" value="100">
+                        <span class="control-value" id="fixedVelocityValueValue">100</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="note-banner" id="midiBanner" style="margin-top: 20px;">
+                Checking Web MIDI support...
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        &copy; 2026 Warf &middot; a <a href="https://monco.io" target="_blank" rel="noopener">monco.io</a> product &middot; MIT License
+    </footer>
+
+    <script>
+        // ===== Frequency <-> MIDI note math =====
+        const A4_FREQ = 440.0, A4_MIDI = 69;
+        function midiNoteFromFrequency(freq) { return A4_MIDI + 12 * Math.log2(freq / A4_FREQ); }
+        function noteNameFromMidiNote(n) {
+            const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+            const octave = Math.floor(n / 12) - 1;
+            return names[((n % 12) + 12) % 12] + octave;
+        }
+        function nextPowerOfTwo(n) { let p = 1; while (p < n) p *= 2; return p; }
+
+        // ===== PitchDetector: real-time monophonic YIN pitch tracker =====
+        // Direct JS port of src/PitchDetector.cpp - see that file's comments for the algorithm
+        // rationale (window size derived from minFrequencyHz, hop = window/4, parabolic
+        // interpolation for sub-sample period precision).
+        class PitchDetector {
+            prepare(sampleRate, minFrequencyHz = 60) {
+                this.sampleRate = sampleRate;
+                const maxPeriodSamples = Math.ceil(sampleRate / minFrequencyHz);
+                this.windowSize = nextPowerOfTwo(maxPeriodSamples * 2);
+                this.hopSize = Math.floor(this.windowSize / 4);
+                this.ringBuffer = new Float32Array(this.windowSize);
+                this.analysisWindow = new Float32Array(this.windowSize);
+                this.cmnd = new Float32Array(Math.floor(this.windowSize / 2));
+                this.writePos = 0;
+                this.samplesSinceLastHop = 0;
+                this.samplesWritten = 0;
+                this.yinThreshold = 0.15;
+            }
+
+            pushSamples(samples, onHop) {
+                const N = this.windowSize;
+                for (let i = 0; i < samples.length; i++) {
+                    this.ringBuffer[this.writePos] = samples[i];
+                    this.writePos = (this.writePos + 1) % N;
+                    this.samplesSinceLastHop++;
+                    if (this.samplesWritten < N) this.samplesWritten++;
+
+                    if (this.samplesSinceLastHop >= this.hopSize && this.samplesWritten >= N) {
+                        this.samplesSinceLastHop = 0;
+                        onHop(this._analyse());
+                    }
+                }
+            }
+
+            _analyse() {
+                const N = this.windowSize;
+                for (let i = 0; i < N; i++)
+                    this.analysisWindow[i] = this.ringBuffer[(this.writePos + i) % N];
+
+                let sumSquares = 0;
+                for (let i = 0; i < N; i++) sumSquares += this.analysisWindow[i] * this.analysisWindow[i];
+                const rms = Math.sqrt(sumSquares / N);
+
+                const tauMax = this.cmnd.length;
+                this.cmnd[0] = 1;
+                let runningSum = 0;
+                for (let tau = 1; tau < tauMax; tau++) {
+                    let diff = 0;
+                    for (let j = 0; j < tauMax; j++) {
+                        const d = this.analysisWindow[j] - this.analysisWindow[j + tau];
+                        diff += d * d;
+                    }
+                    runningSum += diff;
+                    this.cmnd[tau] = runningSum > 0 ? (diff * tau / runningSum) : 1;
+                }
+
+                let tauEstimate = -1;
+                for (let tau = 2; tau < tauMax - 1; tau++) {
+                    if (this.cmnd[tau] < this.yinThreshold) {
+                        while (tau + 1 < tauMax && this.cmnd[tau + 1] < this.cmnd[tau]) tau++;
+                        tauEstimate = Math.min(tau, tauMax - 2);
+                        break;
+                    }
+                }
+
+                if (tauEstimate <= 0) {
+                    let best = Infinity;
+                    for (let tau = 2; tau < tauMax - 1; tau++) best = Math.min(best, this.cmnd[tau]);
+                    return { hasPitch: false, frequencyHz: 0, confidence: Math.max(0, 1 - best), rms };
+                }
+
+                let betterTau = tauEstimate;
+                const x0 = this.cmnd[tauEstimate - 1], x1 = this.cmnd[tauEstimate], x2 = this.cmnd[tauEstimate + 1];
+                const denom = 2 * x1 - x2 - x0;
+                if (Math.abs(denom) > 1e-9) betterTau += 0.5 * (x0 - x2) / denom;
+
+                return {
+                    hasPitch: true,
+                    frequencyHz: this.sampleRate / betterTau,
+                    confidence: Math.min(1, Math.max(0, 1 - x1)),
+                    rms
+                };
+            }
+        }
+
+        // ===== NoteTracker: onset/offset debounce state machine =====
+        // Direct JS port of src/NoteTracker.cpp - see that file's comments for the state machine
+        // rationale (attackHops/releaseHops debouncing, legato retrigger on a new stable pitch).
+        class NoteTracker {
+            constructor() { this.settings = {}; this._reset(); }
+            setSettings(settings) { this.settings = settings; }
+            _reset() {
+                this.noteIsSounding = false;
+                this.currentMidiNote = -1;
+                this.silentHops = 0;
+                this.candidateNote = -1;
+                this.candidateStableHops = 0;
+                this.candidateVelocityRms = 0;
+            }
+            reset(onNoteOff) { this.allNotesOff(onNoteOff); }
+
+            processHop(hop, onNoteOn, onNoteOff) {
+                const s = this.settings;
+                const voiced = hop.hasPitch && hop.confidence >= s.minConfidence && hop.rms >= s.noiseGate;
+
+                if (!voiced) {
+                    this.candidateNote = -1;
+                    this.candidateStableHops = 0;
+                    if (this.noteIsSounding) {
+                        this.silentHops++;
+                        if (this.silentHops >= s.releaseHops) {
+                            onNoteOff(this.currentMidiNote);
+                            this.noteIsSounding = false;
+                            this.currentMidiNote = -1;
+                            this.silentHops = 0;
+                        }
+                    }
+                    return;
+                }
+
+                this.silentHops = 0;
+                const exactMidi = midiNoteFromFrequency(hop.frequencyHz) + s.transposeSemitones;
+                const nearestNote = Math.round(exactMidi);
+                if (nearestNote < 0 || nearestNote > 127) return;
+
+                if (this.noteIsSounding && nearestNote === this.currentMidiNote) {
+                    this.candidateNote = -1;
+                    this.candidateStableHops = 0;
+                    return;
+                }
+
+                const centsFromNearest = (exactMidi - nearestNote) * 100;
+                if (Math.abs(centsFromNearest) > s.pitchToleranceCents) {
+                    this.candidateStableHops = 0;
+                    return;
+                }
+
+                if (nearestNote === this.candidateNote) {
+                    this.candidateStableHops++;
+                    this.candidateVelocityRms = Math.max(this.candidateVelocityRms, hop.rms);
+                } else {
+                    this.candidateNote = nearestNote;
+                    this.candidateStableHops = 1;
+                    this.candidateVelocityRms = hop.rms;
+                }
+
+                if (this.candidateStableHops >= s.attackHops) {
+                    if (this.noteIsSounding) onNoteOff(this.currentMidiNote);
+                    const velocity = s.fixedVelocity ? s.fixedVelocityValue : velocityFromRms(this.candidateVelocityRms);
+                    onNoteOn(this.candidateNote, velocity);
+                    this.noteIsSounding = true;
+                    this.currentMidiNote = this.candidateNote;
+                    this.candidateNote = -1;
+                    this.candidateStableHops = 0;
+                    this.candidateVelocityRms = 0;
+                }
+            }
+
+            allNotesOff(onNoteOff) {
+                if (this.noteIsSounding && onNoteOff) onNoteOff(this.currentMidiNote);
+                this._reset();
+            }
+        }
+
+        function velocityFromRms(rms) {
+            const db = 20 * Math.log10(Math.max(rms, 1e-6));
+            const normalised = Math.min(1, Math.max(0, (db + 40) / 40));
+            return Math.min(127, Math.max(1, Math.round(normalised * 126) + 1));
+        }
+
+        // ===== App wiring =====
+        const pitchDetector = new PitchDetector();
+        const noteTracker = new NoteTracker();
+
+        let audioCtx = null, micStream = null, sourceNode = null, processorNode = null;
+        let midiAccess = null, midiOutput = null;
+        let smoothedRms = 0;
+
+        function readSettings() {
+            const sensitivity = parseFloat(document.getElementById('sensitivity').value);
+            return {
+                noiseGate: Math.pow(10, parseFloat(document.getElementById('gate').value) / 20),
+                minConfidence: sensitivity < 0.001 ? 0.95 : 0.95 - sensitivity * 0.20,
+                pitchToleranceCents: 20 + sensitivity * 30,
+                attackHops: sensitivity < 0.5 ? 4 : 2,
+                releaseHops: 4,
+                transposeSemitones: parseInt(document.getElementById('transpose').value, 10),
+                midiChannel: parseInt(document.getElementById('midiChannel').value, 10),
+                fixedVelocity: document.getElementById('fixedVelocity').checked,
+                fixedVelocityValue: parseInt(document.getElementById('fixedVelocityValue').value, 10),
+            };
+        }
+
+        function sendNoteOn(note, velocity) {
+            if (midiOutput) {
+                const channel = readSettings().midiChannel - 1;
+                midiOutput.send([0x90 | channel, note, velocity]);
+            }
+        }
+        function sendNoteOff(note) {
+            if (midiOutput) {
+                const channel = readSettings().midiChannel - 1;
+                midiOutput.send([0x80 | channel, note, 0]);
+            }
+        }
+
+        function updateReadout(hop) {
+            const noteEl = document.getElementById('noteReadout');
+            const subEl = document.getElementById('noteSub');
+            if (hop.hasPitch) {
+                const exactMidi = midiNoteFromFrequency(hop.frequencyHz);
+                const nearestNote = Math.round(exactMidi);
+                const cents = Math.round((exactMidi - nearestNote) * 100);
+                noteEl.textContent = noteNameFromMidiNote(nearestNote);
+                noteEl.classList.remove('silent');
+                subEl.textContent = hop.frequencyHz.toFixed(1) + ' Hz  (' + (cents >= 0 ? '+' : '') + cents + 'c)';
+            } else {
+                noteEl.textContent = '--';
+                noteEl.classList.add('silent');
+                subEl.textContent = 'Listening for a single note or voice line...';
+            }
+
+            smoothedRms = smoothedRms * 0.7 + hop.rms * 0.3;
+            const pct = Math.min(100, Math.max(0, smoothedRms * 400));
+            document.getElementById('levelMeter').style.width = pct + '%';
+        }
+
+        async function startMic() {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+            micStream = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 }
+            });
+
+            pitchDetector.prepare(audioCtx.sampleRate);
+            noteTracker.setSettings(readSettings());
+
+            sourceNode = audioCtx.createMediaStreamSource(micStream);
+            // ScriptProcessorNode is deprecated in favour of AudioWorklet, but is simpler to embed
+            // inline (no separate module file to serve) and is what Kerf's own PCM capture uses too.
+            processorNode = audioCtx.createScriptProcessor(2048, 1, 1);
+            processorNode.onaudioprocess = (e) => {
+                noteTracker.setSettings(readSettings());
+                const input = e.inputBuffer.getChannelData(0);
+                pitchDetector.pushSamples(input, (hop) => {
+                    noteTracker.processHop(hop, sendNoteOn, sendNoteOff);
+                    updateReadout(hop);
+                });
+            };
+            sourceNode.connect(processorNode);
+            // Connecting to destination is required by some browsers for onaudioprocess to fire,
+            // even though we never want to hear the raw mic signal - so route through a silent gain.
+            const silentGain = audioCtx.createGain();
+            silentGain.gain.value = 0;
+            processorNode.connect(silentGain);
+            silentGain.connect(audioCtx.destination);
+
+            document.getElementById('statusDot').classList.add('live');
+            document.getElementById('statusText').textContent = 'Listening at ' + audioCtx.sampleRate + ' Hz';
+            const btn = document.getElementById('toggleMicBtn');
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-danger');
+            btn.lastChild.textContent = ' Stop Listening';
+        }
+
+        function stopMic() {
+            noteTracker.allNotesOff(sendNoteOff);
+            if (processorNode) { processorNode.disconnect(); processorNode.onaudioprocess = null; processorNode = null; }
+            if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+            if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+            if (audioCtx) { audioCtx.close(); audioCtx = null; }
+
+            document.getElementById('statusDot').classList.remove('live');
+            document.getElementById('statusText').textContent = 'Microphone not started';
+            updateReadout({ hasPitch: false, rms: 0 });
+            const btn = document.getElementById('toggleMicBtn');
+            btn.classList.add('btn-primary');
+            btn.classList.remove('btn-danger');
+            btn.lastChild.textContent = ' Start Listening';
+        }
+
+        document.getElementById('toggleMicBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('toggleMicBtn');
+            if (audioCtx) { stopMic(); return; }
+            btn.disabled = true;
+            try {
+                await startMic();
+            } catch (err) {
+                console.error('Microphone access failed', err);
+                document.getElementById('statusText').textContent = 'Microphone access denied or unavailable';
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // ===== Web MIDI output =====
+        function refreshMidiOutputs() {
+            const select = document.getElementById('midiOutputSelect');
+            const previous = select.value;
+            select.innerHTML = '<option value="">No MIDI output selected</option>';
+            if (!midiAccess) return;
+            for (const output of midiAccess.outputs.values()) {
+                const opt = document.createElement('option');
+                opt.value = output.id;
+                opt.textContent = output.name;
+                select.appendChild(opt);
+            }
+            if ([...select.options].some((o) => o.value === previous)) select.value = previous;
+        }
+
+        document.getElementById('midiOutputSelect').addEventListener('change', (e) => {
+            midiOutput = (midiAccess && e.target.value) ? midiAccess.outputs.get(e.target.value) : null;
+        });
+
+        if (navigator.requestMIDIAccess) {
+            navigator.requestMIDIAccess({ sysex: false }).then((access) => {
+                midiAccess = access;
+                midiAccess.onstatechange = refreshMidiOutputs;
+                refreshMidiOutputs();
+                document.getElementById('midiBanner').textContent = midiAccess.outputs.size > 0
+                    ? 'MIDI outputs detected — pick one above to send live notes to your DAW or synth.'
+                    : 'No MIDI outputs found. On Windows, install a virtual MIDI port (e.g. loopMIDI) and route it into your DAW to use Warf as an audio-to-MIDI controller.';
+            }).catch(() => {
+                document.getElementById('midiBanner').textContent = 'Web MIDI access was denied. You can still see live note detection above, but MIDI won\'t be sent anywhere.';
+            });
+        } else {
+            document.getElementById('midiBanner').textContent = 'This browser does not support Web MIDI (Chrome and Edge do). You can still see live note detection above, but MIDI won\'t be sent anywhere.';
+        }
+
+        // ===== Slider value labels =====
+        function bindSlider(id, valueId, format) {
+            const input = document.getElementById(id);
+            const label = document.getElementById(valueId);
+            const update = () => { label.textContent = format ? format(input.value) : input.value; };
+            input.addEventListener('input', update);
+            update();
+        }
+        bindSlider('sensitivity', 'sensitivityValue', (v) => parseFloat(v).toFixed(2));
+        bindSlider('gate', 'gateValue');
+        bindSlider('transpose', 'transposeValue');
+        bindSlider('midiChannel', 'midiChannelValue');
+        bindSlider('fixedVelocityValue', 'fixedVelocityValueValue');
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js').catch((err) => console.warn('Service worker registration failed', err));
+            });
+        }
+    </script>
+</body>
+</html>

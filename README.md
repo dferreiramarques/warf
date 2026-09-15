@@ -42,6 +42,15 @@ input, but there's nowhere for the MIDI to go — check your host's docs first.
 - `src/ParameterLayout.{h,cpp}` — the handful of genuinely host-automatable parameters: Sensitivity
   (a single friendly knob mapped internally onto confidence/tolerance/attack-speed), Gate
   Threshold, Transpose, MIDI Channel, and a Fixed Velocity toggle + value.
+- `app.html` — a browser PWA with the same detection engine (a direct JS port of
+  `PitchDetector.cpp` and `NoteTracker.cpp` — same algorithm, same state machine, kept in sync by
+  hand since there's no shared code between C++ and JS). Captures the microphone via
+  `getUserMedia`/`ScriptProcessorNode`, runs YIN pitch tracking in the browser, and sends the
+  resulting MIDI notes to a Web MIDI output port. Chrome/Edge only (Web MIDI isn't supported in
+  Firefox or Safari); needs a virtual MIDI port (e.g. loopMIDI on Windows) to actually reach a DAW.
+- `index.html` — the product/landing page (served at warf.monco.io), linking to both the Windows
+  VST3 installer and `app.html`.
+- `manifest.json` / `service-worker.js` — PWA installability and offline caching for `app.html`.
 
 ## Prerequisites (same recipe as Kerf Lite)
 
@@ -80,11 +89,15 @@ build/WarfTests_artefacts/Debug/WarfTests.exe
 
 ## Status
 
-**Not yet built or verified in a real host** — this is a freshly-scaffolded first version: DSP
-engine and its `juce::UnitTest` suite are in place, but nobody has loaded the actual VST3 into a
-DAW yet. Before calling this "working," build `WarfTests` and confirm it passes, then load the
-plugin into a host that supports VST3 MIDI-output routing (see the caveat above) and check it
-against a real monophonic source.
+`WarfTests` passes (25/25 assertions covering `PitchDetector` accuracy and `NoteTracker`'s
+onset/offset state machine), and both `Warf_VST3` (Debug and Release) and `app.html` build/render
+cleanly — the Release build is what `downloads/Warf_0.1.0_Beta_VST3_x64-setup.exe` and the
+matching `.zip` in this repo were built from. **Still not verified against a real instrument or
+voice in an actual DAW** — the automated tests check the algorithm against synthesized sine waves
+and synthetic pitch sequences, not a live mic or the audio pass-through path with real host
+automation. Try it in a host that supports VST3 MIDI-output routing (see the caveat above) before
+trusting it for anything real.
 
 Not started / explicitly out of scope for this version: polyphonic (chord) detection, pitch bend /
-portamento output for slides, a waveform or pitch-history display, macOS/AU build.
+portamento output for slides, a waveform or pitch-history display, macOS/AU build, a native
+(Tauri-style) desktop wrapper for the PWA.

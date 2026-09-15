@@ -1,0 +1,26 @@
+{
+  "name": "Warf — Audio to MIDI",
+  "short_name": "Warf",
+  "description": "Listens to a monophonic instrument or voice through your microphone and turns it into live MIDI note events.",
+  "start_url": "./app.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#14b8a6",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%230a0a0a' width='192' height='192'/><text x='96' y='130' font-family='Consolas, monospace' font-size='140' font-weight='bold' fill='%2314b8a6' text-anchor='middle'>W</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect fill='%230a0a0a' width='192' height='192'/><text x='96' y='130' font-family='Consolas, monospace' font-size='140' font-weight='bold' fill='%2314b8a6' text-anchor='middle'>W</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["music", "utilities"]
+}
