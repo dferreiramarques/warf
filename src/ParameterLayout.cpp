@@ -13,13 +13,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.5f));
 
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { ParameterIDs::gateThresholdDb, 1 }, "Gate Threshold",
-        juce::NormalisableRange<float> (-60.0f, -10.0f), -40.0f,
-        juce::AudioParameterFloatAttributes().withLabel ("dB")));
+        juce::ParameterID { ParameterIDs::gateThresholdDb, 1 }, "Gate Threshold (dB)",
+        juce::NormalisableRange<float> (-60.0f, -10.0f), -40.0f));
 
     params.push_back (std::make_unique<juce::AudioParameterInt> (
-        juce::ParameterID { ParameterIDs::transpose, 1 }, "Transpose",
-        -24, 24, 0, juce::AudioParameterIntAttributes().withLabel ("st")));
+        juce::ParameterID { ParameterIDs::transpose, 1 }, "Transpose (st)",
+        -24, 24, 0));
 
     params.push_back (std::make_unique<juce::AudioParameterInt> (
         juce::ParameterID { ParameterIDs::midiChannel, 1 }, "MIDI Channel",
