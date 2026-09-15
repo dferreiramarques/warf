@@ -21,7 +21,7 @@ juce_add_plugin(Warf
     DESCRIPTION "Free monophonic audio-to-MIDI converter plugin"
     PLUGIN_MANUFACTURER_CODE Monc
     PLUGIN_CODE Wrf1
-    FORMATS VST3 Standalone
+    FORMATS VST3
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT TRUE

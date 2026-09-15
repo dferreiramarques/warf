@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Warf",
+  "version": "0.1.0",
+  "identifier": "io.monco.warf",
+  "build": {
+    "frontendDist": "dist",
+    "beforeDevCommand": "node scripts/copy-frontend-for-tauri.js",
+    "beforeBuildCommand": "node scripts/copy-frontend-for-tauri.js"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Warf",
+        "width": 480,
+        "height": 820,
+        "minWidth": 380,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

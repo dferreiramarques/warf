@@ -49,14 +49,6 @@ Instruments list next to synths.
 - `src/ParameterLayout.{h,cpp}` — the handful of genuinely host-automatable parameters: Sensitivity
   (a single friendly knob mapped internally onto confidence/tolerance/attack-speed), Gate
   Threshold, Transpose, MIDI Channel, and a Fixed Velocity toggle + value.
-- **Standalone** (`FORMATS VST3 Standalone` in `CMakeLists.txt`) — the exact same processor/editor
-  code, no extra source files, wrapped by JUCE's own `StandaloneFilterWindow` into a real desktop
-  app with its own audio-device and MIDI-output picker (an "Options" menu in the app's title bar).
-  Since this is an effect with both audio in and out, JUCE automatically mutes the input and shows
-  a "muted to avoid feedback loop" banner above the editor - the same safeguard any audio-passthrough
-  Standalone plugin gets, not something built one purpose here. The editor is resizable
-  (`setResizable`/`setResizeLimits` in `PluginEditor.cpp`) specifically so that banner has room to
-  sit above the fixed-size controls without clipping them.
 - `app.html` — a browser PWA with the same detection engine (a direct JS port of
   `PitchDetector.cpp` and `NoteTracker.cpp` — same algorithm, same state machine, kept in sync by
   hand since there's no shared code between C++ and JS). Two ways to use it:
@@ -78,8 +70,14 @@ Instruments list next to synths.
     Uses whichever Detection settings (Sensitivity/Gate/Transpose/Channel/Velocity) are currently
     set on the page. No MIDI output device needed for this path.
 - `index.html` — the product/landing page (served at warf.monco.io), linking to the Windows VST3
-  installer, the standalone app, and `app.html`.
+  installer, the Tauri desktop app, and `app.html`.
 - `manifest.json` / `service-worker.js` — PWA installability and offline caching for `app.html`.
+- `src-tauri/` — a Tauri desktop wrapper around `app.html` (not the VST3 plugin), same recipe as
+  Kerf's own desktop app: `scripts/copy-frontend-for-tauri.js` copies `app.html` (renamed to
+  `index.html`, which is what Tauri's `frontendDist` expects) plus `manifest.json` into
+  `src-tauri/dist/` before each build. No file-system or MIDI Tauri plugins - `getUserMedia` and
+  `navigator.requestMIDIAccess()` both work directly in Tauri's WebView2 on Windows, confirmed by
+  Kerf's own desktop app already relying on Web MIDI for its input the same way.
 
 ## Prerequisites (same recipe as Kerf Lite)
 
@@ -97,13 +95,14 @@ First configure clones JUCE 8.0.15 via FetchContent — takes a while, needs net
 `COPY_PLUGIN_AFTER_BUILD` is on, so a successful build also installs to
 `C:\Program Files\Common Files\VST3\Warf (Beta).vst3` automatically.
 
-## Building the standalone app
+## Building the desktop app (Tauri)
 
 ```
-cmake --build build --config Release --target Warf_Standalone
+npm install
+npm run tauri build
 ```
-Output: `build/Warf_artefacts/Release/Standalone/Warf (Beta).exe` - portable, no installer needed.
-The `.zip` in `downloads/` is just that file zipped up.
+Output lands in `src-tauri/target/release/bundle/` (an NSIS `-setup.exe` and an `.msi`, same as
+Kerf's own desktop app produces) - copy whichever you're distributing into `downloads/`.
 
 ## Building the installer (for distribution)
 
@@ -127,16 +126,16 @@ build/WarfTests_artefacts/Debug/WarfTests.exe
 ## Status
 
 `WarfTests` passes (25/25 assertions covering `PitchDetector` accuracy and `NoteTracker`'s
-onset/offset state machine). `Warf_VST3`, `Warf_Standalone`, and `app.html` all build/render
-cleanly in both Debug and Release — the Release builds are what everything in `downloads/` was
-built from. Confirmed installed and registered correctly in a real Studio One 5 install (see the
-Effects-not-Instruments note above) and smoke-tested the Standalone app's window (launches,
-resizable fix confirmed, audio-input-muted banner and all controls render correctly) via a
-`PrintWindow` capture since no interactive DAW/desktop session is available in this dev loop.
-**Still not verified against a real instrument or voice** — the automated tests check the algorithm
-against synthesized sine waves and synthetic pitch sequences, not an actual microphone signal, and
-nobody's confirmed the VST3's MIDI actually reaches a track in a host yet. Try it against a real
-source before trusting it for anything real.
+onset/offset state machine). `Warf_VST3` and `app.html` build/render cleanly in both Debug and
+Release, and the Tauri desktop app builds clean too (`npm run tauri build`, both the `.msi` and
+NSIS `.exe` bundles) - the Release/bundle builds are what everything in `downloads/` was built
+from. Confirmed installed and registered correctly in a real Studio One 5 install (see the
+Effects-not-Instruments note above), and confirmed by launching the built `warf.exe` directly that
+`app.html` renders correctly inside the Tauri window (a `PrintWindow` capture, since there's no
+interactive desktop session in this dev loop). **Still not verified against a real instrument or
+voice** — the automated tests check the algorithm against synthesized sine waves and synthetic
+pitch sequences, not an actual microphone signal, and nobody's confirmed the VST3's MIDI actually
+reaches a track in a host yet. Try it against a real source before trusting it for anything real.
 
 Not started / explicitly out of scope for this version: polyphonic (chord) detection, pitch bend /
 portamento output for slides, a waveform or pitch-history display, macOS/AU build.

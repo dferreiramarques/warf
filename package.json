@@ -1,0 +1,33 @@
+{
+  "name": "warf",
+  "version": "0.1.0",
+  "description": "Warf — free audio-to-MIDI converter: VST3 plugin, browser PWA, and desktop app",
+  "main": "app.html",
+  "scripts": {
+    "start": "http-server -p 8000 -o /app.html",
+    "serve": "http-server -p 8000",
+    "dev": "http-server -p 8000 -c-1",
+    "tauri": "tauri"
+  },
+  "keywords": [
+    "audio-to-midi",
+    "pitch-detection",
+    "midi",
+    "web-audio",
+    "pwa"
+  ],
+  "author": "David Marques <hello@monco.io>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dferreiramarques/warf.git"
+  },
+  "homepage": "https://warf.monco.io",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "http-server": "^14.1.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
