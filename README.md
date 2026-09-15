@@ -44,10 +44,17 @@ input, but there's nowhere for the MIDI to go — check your host's docs first.
   Threshold, Transpose, MIDI Channel, and a Fixed Velocity toggle + value.
 - `app.html` — a browser PWA with the same detection engine (a direct JS port of
   `PitchDetector.cpp` and `NoteTracker.cpp` — same algorithm, same state machine, kept in sync by
-  hand since there's no shared code between C++ and JS). Captures the microphone via
-  `getUserMedia`/`ScriptProcessorNode`, runs YIN pitch tracking in the browser, and sends the
-  resulting MIDI notes to a Web MIDI output port. Chrome/Edge only (Web MIDI isn't supported in
-  Firefox or Safari); needs a virtual MIDI port (e.g. loopMIDI on Windows) to actually reach a DAW.
+  hand since there's no shared code between C++ and JS). Two ways to use it:
+  - **Live**: captures the microphone via `getUserMedia`/`ScriptProcessorNode`, runs YIN pitch
+    tracking in the browser, and sends the resulting MIDI notes to a Web MIDI output port.
+    Chrome/Edge only (Web MIDI isn't supported in Firefox or Safari); needs a virtual MIDI port
+    (e.g. loopMIDI on Windows) to actually reach a DAW.
+  - **File**: upload a WAV (or anything `AudioContext.decodeAudioData` supports), and it runs the
+    same engine offline over the whole buffer — processed in chunks via `setTimeout` so a long
+    file doesn't freeze the tab — then writes the resulting notes out as a downloadable Standard
+    MIDI File (format 0, fixed 120 BPM / 480 ticks-per-quarter, written by hand with no library).
+    Uses whichever Detection settings (Sensitivity/Gate/Transpose/Channel/Velocity) are currently
+    set on the page. No MIDI output device needed for this path.
 - `index.html` — the product/landing page (served at warf.monco.io), linking to both the Windows
   VST3 installer and `app.html`.
 - `manifest.json` / `service-worker.js` — PWA installability and offline caching for `app.html`.

@@ -47,6 +47,7 @@
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        [hidden] { display: none !important; }
         body {
             background: var(--bg1); color: var(--fg1);
             font-family: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -135,6 +136,13 @@
         }
         .note-banner code { font-family: 'JetBrains Mono', monospace; background: var(--bg3); padding: 1px 5px; border-radius: 4px; }
 
+        .file-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+        .file-name { font-size: .85rem; color: var(--fg3); font-family: 'JetBrains Mono', monospace; overflow-wrap: anywhere; }
+        .file-progress { margin-top: 16px; }
+        .file-progress-label { display: block; margin-top: 8px; font-size: .8rem; color: var(--fg4); }
+        .file-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+        .file-result { margin-top: 16px; font-size: .86rem; color: var(--fg3); }
+
         footer { border-top: 1px solid var(--stroke2); padding: 24px 0; font-size: .82rem; color: var(--fg4); text-align: center; }
         footer a { color: var(--fg3); text-decoration: none; }
         footer a:hover { color: var(--brand); }
@@ -219,6 +227,31 @@
                 </div>
             </div>
 
+            <div class="panel">
+                <div class="section-title">Convert a File</div>
+                <div class="file-row">
+                    <label class="btn btn-ghost" for="fileInput" style="margin: 0;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                        Choose audio file
+                    </label>
+                    <input type="file" id="fileInput" accept="audio/*,.wav" style="display: none;">
+                    <span class="file-name" id="fileName">No file selected (WAV works best)</span>
+                </div>
+                <div class="file-progress" id="fileProgressWrap" hidden>
+                    <div class="meter"><div class="meter-fill" id="fileProgressFill"></div></div>
+                    <span class="file-progress-label" id="fileProgressLabel">Analyzing...</span>
+                </div>
+                <div class="file-actions" id="fileActions" hidden>
+                    <button class="btn btn-primary" id="convertBtn">Convert to MIDI</button>
+                    <button class="btn btn-ghost" id="downloadMidiBtn" hidden>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 21h16"/></svg>
+                        Download MIDI
+                    </button>
+                </div>
+                <div class="file-result" id="fileResult" hidden></div>
+                <div class="file-result" style="margin-top: 12px;">Uses the same Detection settings above — this file uses whatever Sensitivity/Gate/Transpose/Channel/Velocity are currently set.</div>
+            </div>
+
             <div class="note-banner" id="midiBanner" style="margin-top: 20px;">
                 Checking Web MIDI support...
             </div>
@@ -269,7 +302,7 @@
 
                     if (this.samplesSinceLastHop >= this.hopSize && this.samplesWritten >= N) {
                         this.samplesSinceLastHop = 0;
-                        onHop(this._analyse());
+                        onHop(this._analyse(), i);
                     }
                 }
             }
@@ -582,6 +615,178 @@
         bindSlider('transpose', 'transposeValue');
         bindSlider('midiChannel', 'midiChannelValue');
         bindSlider('fixedVelocityValue', 'fixedVelocityValueValue');
+
+        // ===== File upload -> offline MIDI conversion =====
+        // Runs the same PitchDetector/NoteTracker pipeline as the live mic path, but over a
+        // decoded file buffer instead of a real-time stream, then writes the resulting note
+        // events out as a Standard MIDI File (format 0, single track) for download.
+
+        function encodeVarLen(value) {
+            const bytes = [value & 0x7f];
+            value >>= 7;
+            while (value > 0) {
+                bytes.unshift((value & 0x7f) | 0x80);
+                value >>= 7;
+            }
+            return bytes;
+        }
+
+        function strBytes(s) { return Array.from(s).map((c) => c.charCodeAt(0)); }
+
+        // events: [{ type: 'on'|'off', note, velocity, sampleIndex }], already in time order.
+        function buildMidiFile(events, sampleRate, settings) {
+            const ticksPerQuarter = 480;
+            const bpm = 120; // fixed - Warf doesn't do tempo detection, only pitch/note detection
+            const ticksPerSecond = (ticksPerQuarter * bpm) / 60;
+            const channel = (settings.midiChannel - 1) & 0x0f;
+
+            const track = [];
+            const usPerQuarter = Math.round(60000000 / bpm);
+            track.push(...encodeVarLen(0), 0xff, 0x51, 0x03, (usPerQuarter >> 16) & 0xff, (usPerQuarter >> 8) & 0xff, usPerQuarter & 0xff);
+
+            let lastTick = 0;
+            for (const e of events) {
+                const tick = Math.round((e.sampleIndex / sampleRate) * ticksPerSecond);
+                const delta = Math.max(0, tick - lastTick);
+                track.push(...encodeVarLen(delta));
+                if (e.type === 'on') track.push(0x90 | channel, e.note & 0x7f, e.velocity & 0x7f);
+                else track.push(0x80 | channel, e.note & 0x7f, 0);
+                lastTick = tick;
+            }
+            track.push(...encodeVarLen(0), 0xff, 0x2f, 0x00);
+
+            const header = [...strBytes('MThd'), 0, 0, 0, 6, 0, 0, 0, 1, (ticksPerQuarter >> 8) & 0xff, ticksPerQuarter & 0xff];
+            const trackHeader = [...strBytes('MTrk'), (track.length >>> 24) & 0xff, (track.length >>> 16) & 0xff, (track.length >>> 8) & 0xff, track.length & 0xff];
+
+            return new Uint8Array([...header, ...trackHeader, ...track]);
+        }
+
+        function downloadMidi(bytes, filename) {
+            const blob = new Blob([bytes], { type: 'audio/midi' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        // Processes the whole buffer in chunks via setTimeout(0) between them, so a long file
+        // doesn't freeze the tab the way running it all in one synchronous call would.
+        function processFileOffline(audioBuffer, settings, onProgress) {
+            return new Promise((resolve) => {
+                const sampleRate = audioBuffer.sampleRate;
+                const numChannels = audioBuffer.numberOfChannels;
+                const length = audioBuffer.length;
+
+                const mono = new Float32Array(length);
+                for (let ch = 0; ch < numChannels; ch++) {
+                    const data = audioBuffer.getChannelData(ch);
+                    for (let i = 0; i < length; i++) mono[i] += data[i] / numChannels;
+                }
+
+                const filePitchDetector = new PitchDetector();
+                filePitchDetector.prepare(sampleRate);
+                const fileNoteTracker = new NoteTracker();
+                fileNoteTracker.setSettings(settings);
+
+                const events = [];
+                const chunkSize = 65536;
+                let pos = 0;
+
+                function step() {
+                    const end = Math.min(pos + chunkSize, length);
+                    const slice = mono.subarray(pos, end);
+                    filePitchDetector.pushSamples(slice, (hop, idxInSlice) => {
+                        const sampleIndex = pos + idxInSlice;
+                        fileNoteTracker.processHop(
+                            hop,
+                            (note, velocity) => events.push({ type: 'on', note, velocity, sampleIndex }),
+                            (note) => events.push({ type: 'off', note, sampleIndex })
+                        );
+                    });
+                    pos = end;
+                    if (onProgress) onProgress(pos / length);
+
+                    if (pos < length) {
+                        setTimeout(step, 0);
+                    } else {
+                        fileNoteTracker.allNotesOff((note) => events.push({ type: 'off', note, sampleIndex: length }));
+                        resolve({ events, sampleRate });
+                    }
+                }
+
+                step();
+            });
+        }
+
+        let selectedFile = null;
+        let lastMidiBytes = null;
+        let lastMidiFilename = 'warf-output.mid';
+
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            selectedFile = e.target.files[0] || null;
+            document.getElementById('fileName').textContent = selectedFile ? selectedFile.name : 'No file selected (WAV works best)';
+            document.getElementById('fileActions').hidden = !selectedFile;
+            document.getElementById('downloadMidiBtn').hidden = true;
+            document.getElementById('fileResult').hidden = true;
+        });
+
+        document.getElementById('convertBtn').addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            const convertBtn = document.getElementById('convertBtn');
+            const progressWrap = document.getElementById('fileProgressWrap');
+            const progressFill = document.getElementById('fileProgressFill');
+            const resultEl = document.getElementById('fileResult');
+            const downloadBtn = document.getElementById('downloadMidiBtn');
+
+            convertBtn.disabled = true;
+            downloadBtn.hidden = true;
+            resultEl.hidden = true;
+            progressWrap.hidden = false;
+            progressFill.style.width = '0%';
+
+            // Reuse the live mic's AudioContext if one is already running (e.g. so decoding
+            // doesn't collide with an active mic session); otherwise spin up a throwaway one
+            // just for decoding and close it again afterwards.
+            const ownContext = !audioCtx;
+            const decodeCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+
+            try {
+                const arrayBuffer = await selectedFile.arrayBuffer();
+                const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
+                const settings = readSettings();
+
+                const { events } = await processFileOffline(audioBuffer, settings, (progress) => {
+                    progressFill.style.width = (progress * 100).toFixed(0) + '%';
+                });
+
+                const noteOnCount = events.filter((e) => e.type === 'on').length;
+                lastMidiBytes = buildMidiFile(events, audioBuffer.sampleRate, settings);
+                lastMidiFilename = selectedFile.name.replace(/\.[^/.]+$/, '') + '.mid';
+
+                resultEl.hidden = false;
+                resultEl.textContent = noteOnCount === 0
+                    ? 'No notes detected — try lowering the Gate Threshold or raising Sensitivity above.'
+                    : noteOnCount + ' note' + (noteOnCount === 1 ? '' : 's') + ' detected over ' + audioBuffer.duration.toFixed(1) + 's.';
+                downloadBtn.hidden = noteOnCount === 0;
+            } catch (err) {
+                console.error('File conversion failed', err);
+                resultEl.hidden = false;
+                resultEl.textContent = 'Could not convert this file: ' + err.message;
+            } finally {
+                progressWrap.hidden = true;
+                convertBtn.disabled = false;
+                if (ownContext) decodeCtx.close();
+            }
+        });
+
+        document.getElementById('downloadMidiBtn').addEventListener('click', () => {
+            if (lastMidiBytes) downloadMidi(lastMidiBytes, lastMidiFilename);
+        });
 
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
