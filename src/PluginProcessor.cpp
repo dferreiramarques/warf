@@ -3,8 +3,17 @@
 
 WarfAudioProcessor::WarfAudioProcessor()
     : AudioProcessor (BusesProperties()
-                           .withInput ("Input", juce::AudioChannelSet::stereo(), true)
-                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                           // Named "Sidechain", not "Input" - this is what makes hosts (Studio
+                           // One's "Synth Source: Sidechain" toggle, Cubase, Ableton) recognise it
+                           // as an auxiliary audio input on an Instrument-category plugin rather
+                           // than expecting a regular audio-effect input bus. Declaring Warf as an
+                           // Instrument (see VST3_CATEGORIES in CMakeLists.txt) rather than an Fx
+                           // is what makes its MIDI output selectable from another track's
+                           // "Instrument Input" dropdown in hosts that gate MIDI-output routing on
+                           // that category - Studio One notably blocks MIDI routing out of
+                           // audio-effect-slot plugins entirely.
+                           .withInput ("Sidechain", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMETERS", createParameterLayout())
 {
 }
@@ -22,6 +31,8 @@ void WarfAudioProcessor::releaseResources()
 
 bool WarfAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
+    // There's only one input bus (Sidechain) and one output bus (Output), so "main" here just
+    // means those two.
     const auto in = layouts.getMainInputChannelSet();
     const auto out = layouts.getMainOutputChannelSet();
 
@@ -38,16 +49,20 @@ void WarfAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     // Nothing consumes incoming MIDI; only the events generated below should reach the host.
     midiMessages.clear();
 
-    const auto numSamples = buffer.getNumSamples();
-    const auto numChannels = buffer.getNumChannels();
+    // Warf doesn't synthesise anything - it only listens via the sidechain bus and emits MIDI, so
+    // the Output bus (what you'd actually hear on this track) stays silent. The source audio is
+    // still audible on whatever track it's actually coming from.
+    auto outputBuffer = getBusBuffer (buffer, false, 0);
+    outputBuffer.clear();
 
-    // Mono-sum for analysis into scratch space without touching `buffer` - the input passes
-    // through to the output dry and unmodified, so a host can monitor the source while also
-    // routing this plugin's MIDI output elsewhere.
+    auto sidechainBuffer = getBusBuffer (buffer, true, 0);
+    const auto numSamples = sidechainBuffer.getNumSamples();
+    const auto numChannels = sidechainBuffer.getNumChannels();
+
     monoScratch.setSize (1, numSamples, false, false, true);
     monoScratch.clear();
     for (int ch = 0; ch < numChannels; ++ch)
-        monoScratch.addFrom (0, 0, buffer, ch, 0, numSamples, 1.0f / (float) numChannels);
+        monoScratch.addFrom (0, 0, sidechainBuffer, ch, 0, numSamples, 1.0f / (float) numChannels);
 
     // Sensitivity (0=strict/clean, 1=fast/loose) maps to the underlying confidence/tolerance/
     // attack-hop knobs NoteTracker actually uses - see NoteTracker.h for what each one does.

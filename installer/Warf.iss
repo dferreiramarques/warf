@@ -1,5 +1,5 @@
-; Inno Setup script for Warf (Beta) VST3.
-; Build the plugin first (Release config), then compile this with:
+; Inno Setup script for Warf (Beta) + Warf Synth (Beta) VST3.
+; Build both plugins first (Release config), then compile this with:
 ;   "C:\Users\david\AppData\Local\Programs\Inno Setup 6\ISCC.exe" installer\Warf.iss
 ; Output lands in ..\downloads.
 
@@ -9,6 +9,8 @@
 #define MyAppURL "https://warf.monco.io"
 #define MyVst3Name "Warf (Beta).vst3"
 #define MyBuiltVst3Dir "..\build\Warf_artefacts\Release\VST3\Warf (Beta).vst3"
+#define MySynthVst3Name "Warf Synth (Beta).vst3"
+#define MySynthBuiltVst3Dir "..\build\WarfSynth_artefacts\Release\VST3\Warf Synth (Beta).vst3"
 
 [Setup]
 AppId={{9C4E2B7A-5D1F-4A2E-8B6C-3F0A7D1E9C42}
@@ -38,10 +40,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 Source: "{#MyBuiltVst3Dir}\*"; DestDir: "{commoncf64}\VST3\{#MyVst3Name}"; Flags: recursesubdirs ignoreversion
+Source: "{#MySynthBuiltVst3Dir}\*"; DestDir: "{commoncf64}\VST3\{#MySynthVst3Name}"; Flags: recursesubdirs ignoreversion
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{commoncf64}\VST3\{#MyVst3Name}"
+Type: filesandordirs; Name: "{commoncf64}\VST3\{#MySynthVst3Name}"
 
 [Messages]
-WelcomeLabel2=This installs the beta VST3 build of %n%nWarf%n%ninto your system's VST3 folder, so any VST3 host can load it as an effect on an audio track.%n%nThis is a beta - please report anything that sounds wrong or behaves unexpectedly.
-FinishedLabelNoIcons=Setup has finished installing {#MyAppName}. Rescan plugins in your DAW to see it.
+WelcomeLabel2=This installs the beta VST3 build of %n%nWarf and Warf Synth%n%ninto your system's VST3 folder. Warf listens to audio and outputs MIDI (load it as an Instrument, feed it audio via its Sidechain input); Warf Synth is a minimal companion instrument you can put on the receiving MIDI track to actually hear the result.%n%nThis is a beta - please report anything that sounds wrong or behaves unexpectedly.
+FinishedLabelNoIcons=Setup has finished installing {#MyAppName}. Rescan plugins in your DAW to see them.

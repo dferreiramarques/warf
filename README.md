@@ -14,20 +14,23 @@ it will report whichever note the algorithm judges dominant, chattering between 
 tracking a chord — this is an inherent limitation of the approach (YIN-style autocorrelation), not
 a bug to fix later. Point it at a single melodic line.
 
-**A VST3 plugin outputting a separate MIDI stream from an audio input is a real but host-dependent
-workflow.** Ableton Live's own "audio to MIDI" is a built-in DAW feature and does *not* apply to
-third-party VST3 MIDI-output routing the way this plugin needs. Hosts that do support a VST3
-effect placed on an audio track producing its own MIDI output bus for routing elsewhere (a virtual
-MIDI port, a MIDI track, another instrument) include Cubase, Studio One, Bitwig, and REAPER. If
-your DAW doesn't support that routing, Warf's audio pass-through still lets you hear the untouched
-input, but there's nowhere for the MIDI to go — check your host's docs first.
+**Warf is a VST3 Instrument, not an Effect, even though it doesn't synthesise anything.** This
+isn't cosmetic - it's the whole reason Warf's MIDI output can be routed anywhere at all. Several
+hosts, Studio One included, only expose MIDI-output routing to another track for plugins loaded in
+an *Instrument* slot; a plugin loaded as an audio *effect* has no such routing option, full stop,
+regardless of what VST3 buses it declares internally. Confirmed directly against a real Studio One
+5 install (`Plugins-en.settings` before this fix: `category="AudioEffect"` - Warf's MIDI was
+unroutable, exactly the problem reported; after: `category="AudioSynth"`, Studio One's internal
+name for a VST3 Instrument).
 
-**Warf shows up under Effects, not Instruments.** Because it needs an audio input, its VST3
-category is `Fx`/`Analyzer` (`VST3_CATEGORIES` in `CMakeLists.txt`), not `Instrument` - confirmed
-directly in a Studio One install by checking `Plugins-en.settings`, which registers it as
-`category="AudioEffect" subCategory="VST3/Analysis"`. Look for it in your host's Effects browser
-(often under an "Analysis" or "Analyzer" subcategory), placed on an audio track - not in the
-Instruments list next to synths.
+Audio still needs to get into an "Instrument" somehow, so Warf takes it via a bus literally named
+**`Sidechain`** (see `PluginProcessor.cpp`'s constructor) - the same convention vocoder plugins use.
+In Studio One: load Warf on an Instrument track, set that track's **Synth Source to Sidechain** and
+feed it audio, then on a separate MIDI/Instrument track set **Instrument Input** to Warf's track to
+receive the notes it detects. `WarfSynth` (below) exists so that receiving track has something to
+actually play without needing a third-party synth. Cubase, Bitwig, and REAPER support similar
+audio-in/Instrument-out patterns; the exact routing UI varies by host - check its docs. Ableton
+Live's own "audio to MIDI" is a separate, built-in feature and doesn't apply here.
 
 ## Architecture
 
@@ -43,12 +46,18 @@ Instruments list next to synths.
   comment for the full state machine.
 - `src/MidiNoteUtils.h` — plain frequency↔MIDI-note math, no JUCE dependency.
 - `src/PluginProcessor.{h,cpp}` / `src/PluginEditor.{h,cpp}` — the JUCE plugin wrapper and a
-  minimal native GUI (live note/frequency readout + the global parameters below). Mono-sums
-  whatever's on the main input bus for analysis; the input passes through to the output dry and
-  unmodified.
+  minimal native GUI (live note/frequency readout + the global parameters below). Mono-sums the
+  `Sidechain` input bus for analysis; the `Output` bus is left silent (`getBusBuffer` + `.clear()`)
+  since Warf doesn't synthesise anything - see the "read this before building" note above for why
+  audio comes in via a bus named `Sidechain` rather than a normal main input.
 - `src/ParameterLayout.{h,cpp}` — the handful of genuinely host-automatable parameters: Sensitivity
   (a single friendly knob mapped internally onto confidence/tolerance/attack-speed), Gate
   Threshold, Transpose, MIDI Channel, and a Fixed Velocity toggle + value.
+- `synth-src/` (`WarfSynth` target) — a small, deliberately unambitious companion instrument: one
+  selectable oscillator waveform (`SynthVoice.cpp`'s `renderSample()`) through a `juce::ADSR`, built
+  on `juce::Synthesiser`/`SynthesiserVoice` rather than anything from Warf's own engine. A plain
+  MIDI-in/audio-out Instrument, no audio input bus at all - load it on whichever track's Instrument
+  Input is set to receive Warf's output, purely so there's something to hear.
 - `app.html` — a browser PWA with the same detection engine (a direct JS port of
   `PitchDetector.cpp` and `NoteTracker.cpp` — same algorithm, same state machine, kept in sync by
   hand since there's no shared code between C++ and JS). Two ways to use it:
@@ -90,10 +99,13 @@ From a shell where `cmake` and `cl` are both reachable (a Developer Command Prom
 ```
 cmake -B build -G "Visual Studio 16 2019" -A x64
 cmake --build build --config Debug --target Warf_VST3
+cmake --build build --config Debug --target WarfSynth_VST3
 ```
 First configure clones JUCE 8.0.15 via FetchContent — takes a while, needs network access.
-`COPY_PLUGIN_AFTER_BUILD` is on, so a successful build also installs to
-`C:\Program Files\Common Files\VST3\Warf (Beta).vst3` automatically.
+`COPY_PLUGIN_AFTER_BUILD` is on for both targets, so a successful build also installs to
+`C:\Program Files\Common Files\VST3\Warf (Beta).vst3` and `...\Warf Synth (Beta).vst3` automatically
+— close any host that has either one loaded first, or the copy step fails with "Permission denied"
+(a locked file, not a build error - happened during this exact rework because Studio One was open).
 
 ## Building the desktop app (Tauri)
 
@@ -106,9 +118,11 @@ Kerf's own desktop app produces) - copy whichever you're distributing into `down
 
 ## Building the installer (for distribution)
 
-Build Release first, then compile the Inno Setup script:
+Build Release for both plugins first, then compile the Inno Setup script - it bundles both into
+one installer:
 ```
 cmake --build build --config Release --target Warf_VST3
+cmake --build build --config Release --target WarfSynth_VST3
 "C:\Users\<you>\AppData\Local\Programs\Inno Setup 6\ISCC.exe" installer\Warf.iss
 ```
 Output lands in `downloads/Warf_<version>_Beta_VST3_x64-setup.exe`.
@@ -116,8 +130,9 @@ Output lands in `downloads/Warf_<version>_Beta_VST3_x64-setup.exe`.
 ## Tests (no DAW needed)
 
 `WarfTests` is a standalone console app running the engine's `juce::UnitTest` suite —
-`PitchDetector` (accuracy against known-frequency sine waves) and `NoteTracker` (the onset/offset
-debounce state machine) — independent of any host:
+`PitchDetector` (accuracy against known-frequency sine waves), `NoteTracker` (the onset/offset
+debounce state machine), and `SynthVoice` (waveform range, envelope on/off/tail-off behaviour) —
+independent of any host:
 ```
 cmake --build build --config Debug --target WarfTests
 build/WarfTests_artefacts/Debug/WarfTests.exe
@@ -125,17 +140,19 @@ build/WarfTests_artefacts/Debug/WarfTests.exe
 
 ## Status
 
-`WarfTests` passes (25/25 assertions covering `PitchDetector` accuracy and `NoteTracker`'s
-onset/offset state machine). `Warf_VST3` and `app.html` build/render cleanly in both Debug and
-Release, and the Tauri desktop app builds clean too (`npm run tauri build`, both the `.msi` and
-NSIS `.exe` bundles) - the Release/bundle builds are what everything in `downloads/` was built
-from. Confirmed installed and registered correctly in a real Studio One 5 install (see the
-Effects-not-Instruments note above), and confirmed by launching the built `warf.exe` directly that
+`WarfTests` passes (35/35 assertions: `PitchDetector` accuracy, `NoteTracker`'s onset/offset state
+machine, and `SynthVoice`'s waveform/envelope behaviour). `Warf_VST3`, `WarfSynth_VST3`, and
+`app.html` build/render cleanly in both Debug and Release, and the Tauri desktop app builds clean
+too (`npm run tauri build`, both the `.msi` and NSIS `.exe` bundles) - the Release/bundle builds are
+what everything in `downloads/` was built from. Confirmed registered correctly in a real Studio One
+5 install both before and after the Instrument/Sidechain rework (see the note above - this is what
+an actual user hit and reported), and confirmed by launching the built `warf.exe` directly that
 `app.html` renders correctly inside the Tauri window (a `PrintWindow` capture, since there's no
-interactive desktop session in this dev loop). **Still not verified against a real instrument or
-voice** — the automated tests check the algorithm against synthesized sine waves and synthetic
-pitch sequences, not an actual microphone signal, and nobody's confirmed the VST3's MIDI actually
-reaches a track in a host yet. Try it against a real source before trusting it for anything real.
+interactive desktop session in this dev loop). **Still not verified end-to-end against a real
+instrument or voice** — the automated tests check the algorithm against synthesized sine waves and
+synthetic pitch sequences, and nobody's confirmed inside an actual Studio One project that audio
+routed via Synth Source: Sidechain reaches Warf and that the resulting MIDI reaches a receiving
+track via Instrument Input. Try that real signal chain before trusting it for anything real.
 
 Not started / explicitly out of scope for this version: polyphonic (chord) detection, pitch bend /
 portamento output for slides, a waveform or pitch-history display, macOS/AU build.

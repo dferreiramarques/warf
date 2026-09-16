@@ -140,8 +140,7 @@
         .feature-card h3 { font-size: 1.02rem; font-weight: 700; letter-spacing: -0.01em; }
         .feature-card p { color: var(--fg3); font-size: .88rem; line-height: 1.55; }
 
-        .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        @media (max-width: 720px) { .mode-grid { grid-template-columns: 1fr; } }
+        .mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
         .mode-card { border: 1px solid var(--stroke1); border-radius: 14px; padding: 28px; background: var(--bg2); }
         .mode-card .mono { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--fg4); font-weight: 600; }
         .mode-card h3 { margin-top: 8px; font-size: 1.2rem; font-weight: 700; }
@@ -298,8 +297,13 @@
                     </div>
                     <div class="mode-card">
                         <span class="mono">Limitation 02</span>
-                        <h3>Check your DAW supports MIDI-out effects</h3>
-                        <p>A VST3 plugin that outputs its own MIDI stream from audio needs host support. Cubase, Studio One, Bitwig, and REAPER support routing that output elsewhere. Ableton Live's own "audio to MIDI" is a separate, built-in feature and doesn't apply here.</p>
+                        <h3>Warf is an Instrument, not an Effect</h3>
+                        <p>Even though it doesn't synthesize anything, Warf registers as a VST3 Instrument — Studio One (and several other hosts) only expose MIDI-output routing for Instrument-slot plugins, never for a plugin loaded as an audio effect. Look for it under Instruments, not Effects.</p>
+                    </div>
+                    <div class="mode-card">
+                        <span class="mono">Studio One setup</span>
+                        <h3>Sidechain in, Instrument Input out</h3>
+                        <p>Load Warf on an Instrument track and set its <strong>Synth Source to Sidechain</strong>, feeding it your audio (the same pattern vocoder plugins use). On a separate MIDI/Instrument track — with Warf Synth loaded, or any synth you like — set <strong>Instrument Input</strong> to that Warf track to receive the notes it detects.</p>
                     </div>
                 </div>
             </div>
@@ -318,15 +322,15 @@
                     <div class="download-card primary">
                         <svg class="platform-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>
                         <h3>Warf (Beta) — VST3</h3>
-                        <p>Installs straight into your system's VST3 folder. Rescan plugins in your DAW afterwards and it'll show up as an effect you can place on an audio track.</p>
+                        <p>Installs Warf <em>and</em> Warf Synth — a minimal companion instrument for actually hearing the result — into your system's VST3 folder. Both show up under Instruments after a rescan, not Effects.</p>
                         <a class="btn btn-primary" href="downloads/Warf_0.1.0_Beta_VST3_x64-setup.exe">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 21h16"/></svg>
                             Download installer (.exe)
                         </a>
                         <a class="alt-link" href="downloads/Warf_0.1.0_Beta_VST3_x64.zip">
-                            Installer blocked by Windows/your browser? Download the raw .vst3 as a .zip instead —
-                            unzip it and copy the <code class="inline" style="color:inherit;border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.12);">Warf (Beta).vst3</code>
-                            folder into <code class="inline" style="color:inherit;border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.12);">C:\Program Files\Common Files\VST3\</code> yourself
+                            Installer blocked by Windows/your browser? Download the raw .vst3 files as a .zip instead —
+                            unzip it and copy both <code class="inline" style="color:inherit;border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.12);">.vst3</code>
+                            folders into <code class="inline" style="color:inherit;border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.12);">C:\Program Files\Common Files\VST3\</code> yourself
                         </a>
                         <div class="file-meta">
                             <span>v0.1.0 Beta</span>

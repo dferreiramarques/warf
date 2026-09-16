@@ -22,12 +22,17 @@ juce_add_plugin(Warf
     PLUGIN_MANUFACTURER_CODE Monc
     PLUGIN_CODE Wrf1
     FORMATS VST3
-    IS_SYNTH FALSE
+    # Declared as an Instrument, not an Fx, even though Warf doesn't synthesise any sound of its
+    # own - Studio One (and other hosts) only expose MIDI-output routing to another track for
+    # plugins in an Instrument slot; an Fx-slot plugin's MIDI output has nowhere to go. Audio comes
+    # in via a bus literally named "Sidechain" (see PluginProcessor.cpp's constructor) - the same
+    # pattern vocoder plugins use for audio-in/Instrument-out routing in these hosts.
+    IS_SYNTH TRUE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT TRUE
     IS_MIDI_EFFECT FALSE
     COPY_PLUGIN_AFTER_BUILD TRUE
-    VST3_CATEGORIES Fx Analyzer Tools
+    VST3_CATEGORIES Instrument
 )
 
 target_sources(Warf PRIVATE
@@ -56,9 +61,53 @@ target_link_libraries(Warf
         juce::juce_recommended_warning_flags
 )
 
-# Console-only test runner for the engine's juce::UnitTest suite (PitchDetector/NoteTracker) - no
-# DAW or plugin host involved. `cmake --build build --target WarfTests` then run the resulting
-# exe. See tests/Main.cpp.
+# Warf Synth: a minimal companion instrument (plain MIDI-in/audio-out, no audio input bus) meant
+# to be loaded on whichever track receives Warf's MIDI output, so there's something to actually
+# hear without needing a third-party synth. Completely independent of Warf's own engine.
+juce_add_plugin(WarfSynth
+    COMPANY_NAME "Monco"
+    PRODUCT_NAME "Warf Synth (Beta)"
+    PLUGIN_NAME "Warf Synth (Beta)"
+    DESCRIPTION "Minimal companion synth for playing Warf's MIDI output"
+    PLUGIN_MANUFACTURER_CODE Monc
+    PLUGIN_CODE Wrf2
+    FORMATS VST3
+    IS_SYNTH TRUE
+    NEEDS_MIDI_INPUT TRUE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    COPY_PLUGIN_AFTER_BUILD TRUE
+    VST3_CATEGORIES Instrument Synth
+)
+
+target_sources(WarfSynth PRIVATE
+    synth-src/SynthPluginProcessor.cpp
+    synth-src/SynthPluginEditor.cpp
+    synth-src/SynthParameterLayout.cpp
+    synth-src/SynthVoice.cpp
+)
+
+target_compile_definitions(WarfSynth PUBLIC
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_STRICT_REFCOUNTEDPOINTER=1
+    JUCE_VST3_CAN_REPLACE_VST2=0
+)
+
+target_link_libraries(WarfSynth
+    PRIVATE
+        juce::juce_audio_utils
+        juce::juce_audio_processors
+        juce::juce_dsp
+        juce::juce_gui_basics
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags
+)
+
+# Console-only test runner for the engine's juce::UnitTest suite (PitchDetector/NoteTracker/
+# SynthVoice) - no DAW or plugin host involved. `cmake --build build --target WarfTests` then run
+# the resulting exe. See tests/Main.cpp.
 juce_add_console_app(WarfTests
     PRODUCT_NAME "WarfTests"
 )
@@ -67,9 +116,11 @@ target_sources(WarfTests PRIVATE
     tests/Main.cpp
     tests/PitchDetectorTests.cpp
     tests/NoteTrackerTests.cpp
+    tests/SynthVoiceTests.cpp
     src/PitchDetector.cpp
     src/NoteTracker.cpp
     src/ParameterLayout.cpp
+    synth-src/SynthVoice.cpp
 )
 
 target_compile_definitions(WarfTests PRIVATE
