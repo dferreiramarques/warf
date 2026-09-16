@@ -38,14 +38,22 @@ UninstallDisplayIcon={commoncf64}\VST3\{#MyVst3Name}\Contents\Resources\modulein
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[Types]
+Name: "full"; Description: "Full installation (Warf + Warf Synth)"
+Name: "custom"; Description: "Custom installation"; Flags: iscustom
+
+[Components]
+Name: "warf"; Description: "Warf (Beta) - the audio-to-MIDI effect"; Types: full custom; Flags: fixed
+Name: "synth"; Description: "Warf Synth (Beta) - optional companion instrument, useful if you don't already have a synth on hand to test the detected notes with"; Types: full
+
 [Files]
-Source: "{#MyBuiltVst3Dir}\*"; DestDir: "{commoncf64}\VST3\{#MyVst3Name}"; Flags: recursesubdirs ignoreversion
-Source: "{#MySynthBuiltVst3Dir}\*"; DestDir: "{commoncf64}\VST3\{#MySynthVst3Name}"; Flags: recursesubdirs ignoreversion
+Source: "{#MyBuiltVst3Dir}\*"; DestDir: "{commoncf64}\VST3\{#MyVst3Name}"; Flags: recursesubdirs ignoreversion; Components: warf
+Source: "{#MySynthBuiltVst3Dir}\*"; DestDir: "{commoncf64}\VST3\{#MySynthVst3Name}"; Flags: recursesubdirs ignoreversion; Components: synth
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{commoncf64}\VST3\{#MyVst3Name}"
 Type: filesandordirs; Name: "{commoncf64}\VST3\{#MySynthVst3Name}"
 
 [Messages]
-WelcomeLabel2=This installs the beta VST3 build of %n%nWarf and Warf Synth%n%ninto your system's VST3 folder. Warf is a normal audio effect - insert it on an audio track, then pick a MIDI output device right in its editor (a virtual MIDI port like loopMIDI works well if you want that MIDI to land on another track in the same DAW). Warf Synth is a minimal companion instrument you can put on that receiving track to actually hear the result.%n%nThis is a beta - please report anything that sounds wrong or behaves unexpectedly.
+WelcomeLabel2=This installs the beta VST3 build of Warf (and, optionally, Warf Synth) into your system's VST3 folder.%n%nWarf is a normal audio effect with its own MIDI Output Device picker. Warf Synth is a small companion instrument for hearing the result - skip it on the next page if you'd rather use your own synth.%n%nThis is a beta - please report anything that sounds wrong or behaves unexpectedly.
 FinishedLabelNoIcons=Setup has finished installing {#MyAppName}. Rescan plugins in your DAW to see them.

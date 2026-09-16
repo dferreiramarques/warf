@@ -133,7 +133,8 @@ Kerf's own desktop app produces) - copy whichever you're distributing into `down
 ## Building the installer (for distribution)
 
 Build Release for both plugins first, then compile the Inno Setup script - it bundles both into
-one installer:
+one installer, with Warf Synth as an optional, deselectable `[Components]` entry (Warf itself is
+`Flags: fixed`, always installed):
 ```
 cmake --build build --config Release --target Warf_VST3
 cmake --build build --config Release --target WarfSynth_VST3
