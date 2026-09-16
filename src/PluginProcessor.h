@@ -24,10 +24,17 @@ public:
 
     const juce::String getName() const override { return JucePlugin_Name; }
 
-    // No MIDI is consumed - `acceptsMidi() == false` and any incoming MIDI buffer is cleared
-    // before use so only the events this plugin generates reach the host.
+    // No MIDI is consumed, and Warf deliberately does NOT declare a VST3 MIDI output bus either
+    // (see CMakeLists.txt) - a real user found that Studio One auto-previews an Fx's declared MIDI
+    // output through its own default General MIDI softsynth (Microsoft GS Wavetable Synth on
+    // Windows, whose default patch is Acoustic Grand Piano - exactly the phantom "piano" sound
+    // reported, heard even with no device selected in Warf's own MIDI Output Device picker). Since
+    // that bus never served a purpose here anyway (Studio One doesn't let you route an Fx's MIDI
+    // output bus anywhere useful, only Instrument-slot plugins), not declaring it removes the
+    // side effect entirely without losing anything - generated notes only ever go out through
+    // sendToSelectedMidiOutput()'s direct juce::MidiOutput connection now.
     bool acceptsMidi() const override { return false; }
-    bool producesMidi() const override { return true; }
+    bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 
@@ -49,10 +56,9 @@ public:
     float getLastRms() const { return lastRms.load(); }
 
     // MIDI Output Device picker: sends generated notes directly to a system MIDI port
-    // (juce::MidiOutput), independent of whether the host routes this plugin's own VST3 MIDI
-    // output bus anywhere - Studio One notably doesn't for an audio-effect-slot plugin, so this is
-    // the path that actually works there (point a MIDI/Instrument track's input at the same
-    // virtual MIDI port, e.g. one created by loopMIDI). Message-thread only.
+    // (juce::MidiOutput) - the only MIDI output path Warf has (see producesMidi() above for why
+    // there's no VST3 MIDI bus to fall back on). Point a MIDI/Instrument track's input at the same
+    // virtual MIDI port (e.g. one created by loopMIDI) to get it into your DAW. Message-thread only.
     juce::StringArray getMidiOutputDeviceNames() const;
     void setMidiOutputDeviceByIndex (int index); // -1 = none
     int getMidiOutputDeviceIndex() const { return currentMidiOutputIndex; }

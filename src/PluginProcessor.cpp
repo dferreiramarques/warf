@@ -35,7 +35,11 @@ void WarfAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 {
     juce::ScopedNoDenormals noDenormals;
 
-    // Nothing consumes incoming MIDI; only the events generated below should reach the host.
+    // No VST3 MIDI output bus is declared (see producesMidi() in the header for why), so nothing
+    // should ever be written to the host's own MIDI buffer - a host has no defined bus to route it
+    // through, and at least one host (Studio One) was observed auto-previewing exactly this kind
+    // of stray content through its own default General MIDI synth. Generated notes go only to
+    // generatedEvents below, forwarded solely via sendToSelectedMidiOutput()'s direct connection.
     midiMessages.clear();
 
     const auto numSamples = buffer.getNumSamples();
@@ -65,20 +69,17 @@ void WarfAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     settings.fixedVelocityValue = (juce::uint8) (int) apvts.getRawParameterValue (ParameterIDs::fixedVelocityValue)->load();
     noteTracker.setLiveSettings (settings);
 
+    juce::MidiBuffer generatedEvents;
     const auto* monoData = monoScratch.getReadPointer (0);
-    pitchDetector.pushSamples (monoData, numSamples, [this, &midiMessages] (const PitchDetector::Result& hop, int sampleIndex)
+    pitchDetector.pushSamples (monoData, numSamples, [this, &generatedEvents] (const PitchDetector::Result& hop, int sampleIndex)
     {
-        noteTracker.processHop (hop, sampleIndex, midiMessages);
+        noteTracker.processHop (hop, sampleIndex, generatedEvents);
         lastFrequencyHz.store (hop.frequencyHz);
         lastHopVoiced.store (hop.hasPitch);
         lastRms.store (hop.rms);
     });
 
-    // Forward every event just written to the host's own MIDI bus (works automatically in hosts
-    // that route an Fx's MIDI output elsewhere) to the directly-selected system MIDI device too
-    // (works in every host, including ones - like Studio One - that don't support that routing
-    // for an audio-effect-slot plugin at all). See the MIDI Output Device picker in the editor.
-    for (const auto metadata : midiMessages)
+    for (const auto metadata : generatedEvents)
         sendToSelectedMidiOutput (metadata.getMessage());
 }
 
