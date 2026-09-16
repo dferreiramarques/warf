@@ -35,11 +35,7 @@ void WarfAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 {
     juce::ScopedNoDenormals noDenormals;
 
-    // No VST3 MIDI output bus is declared (see producesMidi() in the header for why), so nothing
-    // should ever be written to the host's own MIDI buffer - a host has no defined bus to route it
-    // through, and at least one host (Studio One) was observed auto-previewing exactly this kind
-    // of stray content through its own default General MIDI synth. Generated notes go only to
-    // generatedEvents below, forwarded solely via sendToSelectedMidiOutput()'s direct connection.
+    // Nothing consumes incoming MIDI; only the events generated below should reach the host.
     midiMessages.clear();
 
     const auto numSamples = buffer.getNumSamples();
@@ -69,17 +65,18 @@ void WarfAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     settings.fixedVelocityValue = (juce::uint8) (int) apvts.getRawParameterValue (ParameterIDs::fixedVelocityValue)->load();
     noteTracker.setLiveSettings (settings);
 
-    juce::MidiBuffer generatedEvents;
     const auto* monoData = monoScratch.getReadPointer (0);
-    pitchDetector.pushSamples (monoData, numSamples, [this, &generatedEvents] (const PitchDetector::Result& hop, int sampleIndex)
+    pitchDetector.pushSamples (monoData, numSamples, [this, &midiMessages] (const PitchDetector::Result& hop, int sampleIndex)
     {
-        noteTracker.processHop (hop, sampleIndex, generatedEvents);
+        noteTracker.processHop (hop, sampleIndex, midiMessages);
         lastFrequencyHz.store (hop.frequencyHz);
         lastHopVoiced.store (hop.hasPitch);
         lastRms.store (hop.rms);
     });
 
-    for (const auto metadata : generatedEvents)
+    // Forward the same events to the directly-selected system MIDI device too, if one's chosen -
+    // independent of the host's own VST3-bus routing above. See the MIDI Output Device picker.
+    for (const auto metadata : midiMessages)
         sendToSelectedMidiOutput (metadata.getMessage());
 }
 

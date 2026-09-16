@@ -24,17 +24,15 @@ public:
 
     const juce::String getName() const override { return JucePlugin_Name; }
 
-    // No MIDI is consumed, and Warf deliberately does NOT declare a VST3 MIDI output bus either
-    // (see CMakeLists.txt) - a real user found that Studio One auto-previews an Fx's declared MIDI
-    // output through its own default General MIDI softsynth (Microsoft GS Wavetable Synth on
-    // Windows, whose default patch is Acoustic Grand Piano - exactly the phantom "piano" sound
-    // reported, heard even with no device selected in Warf's own MIDI Output Device picker). Since
-    // that bus never served a purpose here anyway (Studio One doesn't let you route an Fx's MIDI
-    // output bus anywhere useful, only Instrument-slot plugins), not declaring it removes the
-    // side effect entirely without losing anything - generated notes only ever go out through
-    // sendToSelectedMidiOutput()'s direct juce::MidiOutput connection now.
+    // No MIDI is consumed. The VST3 MIDI output bus (producesMidi()) IS declared - turned out to
+    // be load-bearing: a real user relies on Studio One's own "Instrument Input" track routing
+    // (pointing a separate Instrument track's input at Warf's audio track) to get Warf's MIDI to a
+    // synth, and that only works when this bus exists, Fx-category or not - removing it (an
+    // earlier attempt at fixing a phantom-piano report) broke that entirely. The phantom piano
+    // itself needs a different fix - see the MIDI Output Device picker below and the "read this
+    // before building" note for the current understanding of where it's actually coming from.
     bool acceptsMidi() const override { return false; }
-    bool producesMidi() const override { return false; }
+    bool producesMidi() const override { return true; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 
@@ -55,10 +53,11 @@ public:
     bool isLastHopVoiced() const { return lastHopVoiced.load(); }
     float getLastRms() const { return lastRms.load(); }
 
-    // MIDI Output Device picker: sends generated notes directly to a system MIDI port
-    // (juce::MidiOutput) - the only MIDI output path Warf has (see producesMidi() above for why
-    // there's no VST3 MIDI bus to fall back on). Point a MIDI/Instrument track's input at the same
-    // virtual MIDI port (e.g. one created by loopMIDI) to get it into your DAW. Message-thread only.
+    // MIDI Output Device picker: ALSO sends generated notes directly to a system MIDI port
+    // (juce::MidiOutput), independent of the VST3 bus above - useful for reaching an external
+    // hardware synth, or a virtual MIDI port (loopMIDI) that some other app/DAW instance is
+    // listening to. Not needed for Studio One's own Instrument Input routing, which reads directly
+    // from the VST3 bus regardless of what's selected here. Message-thread only.
     juce::StringArray getMidiOutputDeviceNames() const;
     void setMidiOutputDeviceByIndex (int index); // -1 = none
     int getMidiOutputDeviceIndex() const { return currentMidiOutputIndex; }

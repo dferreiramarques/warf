@@ -287,7 +287,7 @@
             <div class="wrap">
                 <div class="section-head">
                     <div class="eyebrow mono">Read this first</div>
-                    <h2>Monophonic only, and Warf picks its own MIDI output device.</h2>
+                    <h2>Monophonic only, and two ways to get its MIDI to a synth.</h2>
                 </div>
                 <div class="mode-grid">
                     <div class="mode-card">
@@ -296,14 +296,14 @@
                         <p>Warf tracks a single melodic line — a voice, or one instrument playing single notes. Feed it a chord and it'll report whichever pitch it judges dominant, not the whole chord. This is inherent to the pitch-detection approach, not a bug to fix later.</p>
                     </div>
                     <div class="mode-card">
-                        <span class="mono">Limitation 02</span>
-                        <h3>Warf is an effect, same as always</h3>
-                        <p>Insert it on an audio track exactly like any other effect. It doesn't rely on your DAW's own MIDI-routing UI at all — instead it opens a system MIDI port directly, the same way a standalone app would.</p>
+                        <span class="mono">Way 01 — inside your DAW</span>
+                        <h3>Instrument Input routing</h3>
+                        <p>Insert Warf on an audio track like any effect. Most DAWs (confirmed in Studio One via its "Instrument Input" track setting) let a separate Instrument/MIDI track pull MIDI straight from Warf's track — no extra software needed. Load Warf Synth on that receiving track to hear it.</p>
                     </div>
                     <div class="mode-card">
-                        <span class="mono">Getting MIDI onto a track</span>
-                        <h3>Pick a device, then point a track at it</h3>
-                        <p>Open Warf's editor and choose a <strong>MIDI Output Device</strong> from the dropdown. To land that on a track inside the same DAW, you need a virtual MIDI loopback — Windows has none built in, so grab the free <a href="https://www.tobias-erichsen.de/software/loopmidi.html" target="_blank" rel="noopener">loopMIDI</a>, pick its port in Warf, then set a MIDI/Instrument track's <strong>input</strong> to that same port (a standard setting in every DAW) — load Warf Synth there to hear it.</p>
+                        <span class="mono">Way 02 — anywhere</span>
+                        <h3>Pick a MIDI Output Device</h3>
+                        <p>Open Warf's editor and choose a <strong>MIDI Output Device</strong> from the dropdown — useful for external hardware, or in a host that doesn't support Instrument Input-style routing. For another track in the same DAW you'll need a virtual MIDI loopback (Windows has none built in) — the free <a href="https://www.tobias-erichsen.de/software/loopmidi.html" target="_blank" rel="noopener">loopMIDI</a> works well.</p>
                     </div>
                 </div>
             </div>

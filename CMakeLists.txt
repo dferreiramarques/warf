@@ -24,15 +24,15 @@ juce_add_plugin(Warf
     FORMATS VST3
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
-    # Deliberately FALSE - no VST3 MIDI output bus. A real user found that declaring one made
-    # Studio One auto-preview Warf's generated MIDI through its own default General MIDI softsynth
-    # (an unwanted "phantom piano", heard even with no MIDI Output Device selected in Warf's own
-    # picker below), and that bus never served a real purpose here anyway - Studio One doesn't let
-    # you route an Fx-slot plugin's MIDI output bus anywhere useful regardless. All MIDI output goes
-    # through PluginProcessor's own MIDI Output Device picker instead (juce::MidiOutput opened
-    # directly, the same mechanism a standalone app would use) - host-independent, works the same
-    # in every DAW since it never touches the host's own MIDI routing at all.
-    NEEDS_MIDI_OUTPUT FALSE
+    # Load-bearing, don't set FALSE again: a real user's actual workflow depends on Studio One's
+    # own "Instrument Input" track routing (pointing another Instrument track's input at Warf's
+    # track) to get Warf's MIDI to a synth, and that only works when this bus is declared - true
+    # regardless of VST3_CATEGORIES being Fx here, contrary to an earlier assumption in this file's
+    # history. A previous attempt to fix a "phantom piano" report by setting this FALSE broke that
+    # routing entirely - the phantom piano needs a different fix; see PluginProcessor's own
+    # MIDI Output Device picker and README's "read this before building" note for the live
+    # understanding of where that sound is actually coming from.
+    NEEDS_MIDI_OUTPUT TRUE
     IS_MIDI_EFFECT FALSE
     COPY_PLUGIN_AFTER_BUILD TRUE
     VST3_CATEGORIES Fx Analyzer Tools

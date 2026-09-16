@@ -14,36 +14,34 @@ it will report whichever note the algorithm judges dominant, chattering between 
 tracking a chord — this is an inherent limitation of the approach (YIN-style autocorrelation), not
 a bug to fix later. Point it at a single melodic line.
 
-**A VST3 plugin has no way to show you a "choose a MIDI device" dropdown via the host's own MIDI
-bus mechanism - so Warf doesn't rely on that mechanism at all.** An early version of this fix tried
-recategorising Warf as an "Instrument" (Studio One and some other hosts only expose MIDI-output
-*routing to another track* for Instrument-slot plugins, never Fx-slot ones) so its MIDI bus output
-could be picked up via Studio One's "Instrument Input" on a receiving track. That's a real,
-documented mechanism, but it meant Warf could no longer just be inserted as a plain effect on an
-audio track, which defeated the actual point - reverted.
+**Getting Warf's MIDI to a synth has gone through several iterations - this is the current, working
+understanding, from an actual user's hands-on testing, not just what the code intends.** Warf stays
+a normal Fx-category effect, inserted on an audio track like any other effect (an earlier attempt
+recategorised it as an "Instrument," which broke that and got reverted). It has **two independent
+MIDI output paths**, both active at once:
 
-**What Warf actually does instead: it's a normal Fx-category effect again, and it opens a system
-MIDI port directly from inside the plugin**, exactly like a standalone app would
-(`juce::MidiOutput`, enumerated and picked from a **MIDI Output Device** dropdown right in Warf's
-own editor - see `PluginProcessor::getMidiOutputDeviceNames()`/`setMidiOutputDeviceByIndex()`).
-This works identically in every host, because it never depends on the host's own MIDI-routing UI at
-all. Insert Warf as an effect on your audio track like normal, open its editor, pick a MIDI output
-device. If you want that MIDI to land on a track *inside the same DAW* (rather than an external
-hardware synth), you need a virtual MIDI loopback - Windows has no built-in one, so install
-something like [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html), pick the loopMIDI
-port in Warf's dropdown, then set a MIDI/Instrument track's *input* to that same port in your DAW
-(a completely standard "listen to this MIDI input port" setting every DAW has - no special
-Instrument-Input trick needed). `WarfSynth` (below) exists so that receiving track has something to
-actually play without needing a third-party synth.
+1. **The VST3 MIDI output bus** (`producesMidi() == true`). Confirmed load-bearing: a real user's
+   working setup uses Studio One's own **"Instrument Input"** track routing - a separate
+   Instrument/MIDI track's input set to Warf's audio track - which reads this bus directly. This
+   works with Warf in its normal Fx category; recategorising as "Instrument" was never actually
+   necessary for it. `WarfSynth` (below) is meant to be loaded on that receiving track.
+2. **A MIDI Output Device picker** in Warf's own editor (`juce::MidiOutput`, enumerated and chosen
+   from a dropdown - see `PluginProcessor::getMidiOutputDeviceNames()`/`setMidiOutputDeviceByIndex()`),
+   sending directly to a system MIDI port. Useful for external hardware, or a virtual MIDI port
+   (Windows has none built in - [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html)
+   is a free one) that something else is listening to. Independent of path 1 - works even in hosts
+   that don't support Instrument Input-style routing at all.
 
-Warf does **not** declare a VST3 MIDI output bus (`producesMidi()` returns `false`) - a first pass
-at this kept it declared "as a bonus for hosts that route an Fx's MIDI output elsewhere," but a real
-user reported hearing a phantom piano even with no device selected in Warf's own picker. Root cause:
-Studio One auto-previews an Fx's declared MIDI output through its own default General MIDI softsynth
-(Microsoft GS Wavetable Synth on Windows - default patch is Acoustic Grand Piano, which is exactly
-what "piano" they heard). Since that bus never let you route Warf's MIDI anywhere useful in Studio
-One anyway, removing it entirely was a clean win: the phantom piano is gone, and the device picker -
-the only MIDI output path now - is unaffected.
+**Known open issue: an unexplained extra "piano" sound reported alongside the intended synth**,
+matching Windows' built-in Microsoft GS Wavetable Synth's default patch (Acoustic Grand Piano) -
+observed with the MIDI Output Device picker set to "None," which ruled that path out as the source.
+A first fix attempt removed the VST3 MIDI bus entirely on the theory that Studio One auto-previews
+an Fx's declared MIDI output through its own default GM softsynth - this did stop the reported
+sound, but it also broke Instrument Input routing, which turned out to be load-bearing for the
+user's actual setup, so it was reverted. **The real source of the phantom piano is still
+unconfirmed** - re-verify whether it's still present with the MIDI bus restored, and if so, look
+for a Studio One-side per-track MIDI monitoring/output-device setting (separate from Warf's own
+picker) before touching this again.
 
 ## Architecture
 
@@ -61,9 +59,9 @@ the only MIDI output path now - is unaffected.
 - `src/PluginProcessor.{h,cpp}` / `src/PluginEditor.{h,cpp}` — the JUCE plugin wrapper and a
   minimal native GUI (live note/frequency readout, the MIDI Output Device picker, and the global
   parameters below). Mono-sums whatever's on the main input bus for analysis; the input passes
-  through to the output dry and unmodified. Generated notes never touch the host's own MIDI
-  buffer (no VST3 MIDI bus is declared - see the "read this before building" note above for why) -
-  they go only to `sendToSelectedMidiOutput()`'s direct `juce::MidiOutput` connection.
+  through to the output dry and unmodified. Every generated note goes to both the host's own VST3
+  MIDI bus and, if one's selected, directly to a system MIDI port via `juce::MidiOutput` - see the
+  "read this before building" note above for why there are two paths and what's still unresolved.
 - `src/ParameterLayout.{h,cpp}` — the handful of genuinely host-automatable parameters: Sensitivity
   (a single friendly knob mapped internally onto confidence/tolerance/attack-speed), Gate
   Threshold, Transpose, MIDI Channel, and a Fixed Velocity toggle + value. The MIDI Output Device
@@ -165,15 +163,13 @@ what everything in `downloads/` was built from. Confirmed via a real Studio One 
 `category="AudioEffect"` - a normal audio-effect insert, as intended - and isn't blacklisted; also
 confirmed by launching the built `warf.exe` directly that `app.html` renders correctly inside the
 Tauri window (a `PrintWindow` capture, since there's no interactive desktop session in this dev
-loop). **The MIDI Output Device picker itself hasn't been exercised against a real output port from
-inside a host** - no DAW project has been opened in this dev loop to insert Warf, pick a device, and
-confirm MIDI actually arrives at the far end (e.g. via loopMIDI into a receiving track). The
-`juce::MidiOutput` calls it's built on are standard JUCE API used as documented, but "compiles and
-the plugin loads" isn't the same claim as "a note played into Warf reached a synth on another
-track." One real-world round-trip already happened, though: a user's report of a phantom piano
-sound with no output device selected is what led directly to removing the VST3 MIDI bus entirely
-(see above) - so at least that part of the signal chain has been genuinely exercised. Try the full
-chain (audio in, device picked, MIDI arriving on another track) before trusting it for anything real.
+loop). This has genuinely been exercised end-to-end by a real user, not just built and assumed
+working: Instrument Input routing from Warf's track into a synth (Mojito, Warf Synth) has been
+confirmed working when the VST3 MIDI bus is declared, and confirmed broken when it isn't - that's
+exactly why it's back. **Still open: an extra "piano" sound reported alongside the intended synth**,
+not yet root-caused - see the "read this before building" note above for the current understanding
+and what to check next before changing this area again. The MIDI Output Device picker's direct
+`juce::MidiOutput` path hasn't been separately exercised against a real output port.
 
 Not started / explicitly out of scope for this version: polyphonic (chord) detection, pitch bend /
 portamento output for slides, a waveform or pitch-history display, macOS/AU build.
