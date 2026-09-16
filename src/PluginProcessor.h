@@ -1,7 +1,9 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_audio_devices/juce_audio_devices.h>
 #include <atomic>
+#include <memory>
 #include "ParameterLayout.h"
 #include "PitchDetector.h"
 #include "NoteTracker.h"
@@ -46,7 +48,18 @@ public:
     bool isLastHopVoiced() const { return lastHopVoiced.load(); }
     float getLastRms() const { return lastRms.load(); }
 
+    // MIDI Output Device picker: sends generated notes directly to a system MIDI port
+    // (juce::MidiOutput), independent of whether the host routes this plugin's own VST3 MIDI
+    // output bus anywhere - Studio One notably doesn't for an audio-effect-slot plugin, so this is
+    // the path that actually works there (point a MIDI/Instrument track's input at the same
+    // virtual MIDI port, e.g. one created by loopMIDI). Message-thread only.
+    juce::StringArray getMidiOutputDeviceNames() const;
+    void setMidiOutputDeviceByIndex (int index); // -1 = none
+    int getMidiOutputDeviceIndex() const { return currentMidiOutputIndex; }
+
 private:
+    void sendToSelectedMidiOutput (const juce::MidiMessage& message);
+
     juce::AudioProcessorValueTreeState apvts;
     PitchDetector pitchDetector;
     NoteTracker noteTracker;
@@ -55,6 +68,11 @@ private:
     std::atomic<double> lastFrequencyHz { 0.0 };
     std::atomic<bool> lastHopVoiced { false };
     std::atomic<float> lastRms { 0.0f };
+
+    juce::CriticalSection midiOutputLock;
+    std::unique_ptr<juce::MidiOutput> midiOutputDevice; // guarded by midiOutputLock
+    int currentMidiOutputIndex = -1;
+    juce::String lastSelectedMidiOutputIdentifier; // persisted so the choice survives project reload
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WarfAudioProcessor)
 };

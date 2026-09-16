@@ -22,17 +22,17 @@ juce_add_plugin(Warf
     PLUGIN_MANUFACTURER_CODE Monc
     PLUGIN_CODE Wrf1
     FORMATS VST3
-    # Declared as an Instrument, not an Fx, even though Warf doesn't synthesise any sound of its
-    # own - Studio One (and other hosts) only expose MIDI-output routing to another track for
-    # plugins in an Instrument slot; an Fx-slot plugin's MIDI output has nowhere to go. Audio comes
-    # in via a bus literally named "Sidechain" (see PluginProcessor.cpp's constructor) - the same
-    # pattern vocoder plugins use for audio-in/Instrument-out routing in these hosts.
-    IS_SYNTH TRUE
+    IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
+    # Still declares a VST3 MIDI output bus (works automatically in hosts that route an Fx's MIDI
+    # output elsewhere, e.g. Cubase/Bitwig/REAPER) - but the real, host-independent path is
+    # PluginProcessor's own MIDI Output Device picker (juce::MidiOutput, same mechanism a
+    # standalone app would use), which sends directly to a system MIDI port regardless of whether
+    # the host supports Fx-slot MIDI routing at all. Studio One notably doesn't - see the picker.
     NEEDS_MIDI_OUTPUT TRUE
     IS_MIDI_EFFECT FALSE
     COPY_PLUGIN_AFTER_BUILD TRUE
-    VST3_CATEGORIES Instrument
+    VST3_CATEGORIES Fx Analyzer Tools
 )
 
 target_sources(Warf PRIVATE
@@ -52,6 +52,7 @@ target_compile_definitions(Warf PUBLIC
 target_link_libraries(Warf
     PRIVATE
         juce::juce_audio_utils
+        juce::juce_audio_devices
         juce::juce_audio_processors
         juce::juce_dsp
         juce::juce_gui_basics

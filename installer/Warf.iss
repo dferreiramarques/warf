@@ -47,5 +47,5 @@ Type: filesandordirs; Name: "{commoncf64}\VST3\{#MyVst3Name}"
 Type: filesandordirs; Name: "{commoncf64}\VST3\{#MySynthVst3Name}"
 
 [Messages]
-WelcomeLabel2=This installs the beta VST3 build of %n%nWarf and Warf Synth%n%ninto your system's VST3 folder. Warf listens to audio and outputs MIDI (load it as an Instrument, feed it audio via its Sidechain input); Warf Synth is a minimal companion instrument you can put on the receiving MIDI track to actually hear the result.%n%nThis is a beta - please report anything that sounds wrong or behaves unexpectedly.
+WelcomeLabel2=This installs the beta VST3 build of %n%nWarf and Warf Synth%n%ninto your system's VST3 folder. Warf is a normal audio effect - insert it on an audio track, then pick a MIDI output device right in its editor (a virtual MIDI port like loopMIDI works well if you want that MIDI to land on another track in the same DAW). Warf Synth is a minimal companion instrument you can put on that receiving track to actually hear the result.%n%nThis is a beta - please report anything that sounds wrong or behaves unexpectedly.
 FinishedLabelNoIcons=Setup has finished installing {#MyAppName}. Rescan plugins in your DAW to see them.

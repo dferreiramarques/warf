@@ -19,12 +19,20 @@ private:
     void timerCallback() override;
 
     WarfAudioProcessor& processor;
+    int midiDeviceRefreshCounter = 0;
 
     juce::Label titleLabel { {}, "Warf" };
     juce::Label subtitleLabel { {}, "audio to MIDI" };
 
     juce::Label detectedNoteLabel { {}, "--" };
     juce::Label statusLabel { {}, "Listening..." };
+
+    // Not an APVTS parameter - this is a device selection (host-agnostic, chosen from whatever
+    // system MIDI ports currently exist), not something a DAW would automate. See
+    // WarfAudioProcessor's own comment for why this exists.
+    juce::ComboBox midiOutputDeviceBox;
+    juce::Label midiOutputDeviceLabel { {}, "MIDI Output Device" };
+    void refreshMidiOutputDeviceList();
 
     juce::Slider sensitivitySlider;
     juce::Label sensitivityLabel { {}, "Sensitivity" };

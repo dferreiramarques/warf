@@ -287,7 +287,7 @@
             <div class="wrap">
                 <div class="section-head">
                     <div class="eyebrow mono">Read this first</div>
-                    <h2>Monophonic only, and MIDI routing is host-dependent.</h2>
+                    <h2>Monophonic only, and Warf picks its own MIDI output device.</h2>
                 </div>
                 <div class="mode-grid">
                     <div class="mode-card">
@@ -297,13 +297,13 @@
                     </div>
                     <div class="mode-card">
                         <span class="mono">Limitation 02</span>
-                        <h3>Warf is an Instrument, not an Effect</h3>
-                        <p>Even though it doesn't synthesize anything, Warf registers as a VST3 Instrument — Studio One (and several other hosts) only expose MIDI-output routing for Instrument-slot plugins, never for a plugin loaded as an audio effect. Look for it under Instruments, not Effects.</p>
+                        <h3>Warf is an effect, same as always</h3>
+                        <p>Insert it on an audio track exactly like any other effect. It doesn't rely on your DAW's own MIDI-routing UI at all — instead it opens a system MIDI port directly, the same way a standalone app would.</p>
                     </div>
                     <div class="mode-card">
-                        <span class="mono">Studio One setup</span>
-                        <h3>Sidechain in, Instrument Input out</h3>
-                        <p>Load Warf on an Instrument track and set its <strong>Synth Source to Sidechain</strong>, feeding it your audio (the same pattern vocoder plugins use). On a separate MIDI/Instrument track — with Warf Synth loaded, or any synth you like — set <strong>Instrument Input</strong> to that Warf track to receive the notes it detects.</p>
+                        <span class="mono">Getting MIDI onto a track</span>
+                        <h3>Pick a device, then point a track at it</h3>
+                        <p>Open Warf's editor and choose a <strong>MIDI Output Device</strong> from the dropdown. To land that on a track inside the same DAW, you need a virtual MIDI loopback — Windows has none built in, so grab the free <a href="https://www.tobias-erichsen.de/software/loopmidi.html" target="_blank" rel="noopener">loopMIDI</a>, pick its port in Warf, then set a MIDI/Instrument track's <strong>input</strong> to that same port (a standard setting in every DAW) — load Warf Synth there to hear it.</p>
                     </div>
                 </div>
             </div>
@@ -322,7 +322,7 @@
                     <div class="download-card primary">
                         <svg class="platform-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>
                         <h3>Warf (Beta) — VST3</h3>
-                        <p>Installs Warf <em>and</em> Warf Synth — a minimal companion instrument for actually hearing the result — into your system's VST3 folder. Both show up under Instruments after a rescan, not Effects.</p>
+                        <p>Installs Warf <em>and</em> Warf Synth into your system's VST3 folder. Warf shows up under Effects after a rescan — insert it on an audio track, then pick a MIDI output device right in its editor. Warf Synth (under Instruments) is a minimal companion for actually hearing the result.</p>
                         <a class="btn btn-primary" href="downloads/Warf_0.1.0_Beta_VST3_x64-setup.exe">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 21h16"/></svg>
                             Download installer (.exe)

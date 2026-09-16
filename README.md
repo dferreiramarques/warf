@@ -14,23 +14,31 @@ it will report whichever note the algorithm judges dominant, chattering between 
 tracking a chord — this is an inherent limitation of the approach (YIN-style autocorrelation), not
 a bug to fix later. Point it at a single melodic line.
 
-**Warf is a VST3 Instrument, not an Effect, even though it doesn't synthesise anything.** This
-isn't cosmetic - it's the whole reason Warf's MIDI output can be routed anywhere at all. Several
-hosts, Studio One included, only expose MIDI-output routing to another track for plugins loaded in
-an *Instrument* slot; a plugin loaded as an audio *effect* has no such routing option, full stop,
-regardless of what VST3 buses it declares internally. Confirmed directly against a real Studio One
-5 install (`Plugins-en.settings` before this fix: `category="AudioEffect"` - Warf's MIDI was
-unroutable, exactly the problem reported; after: `category="AudioSynth"`, Studio One's internal
-name for a VST3 Instrument).
+**A VST3 plugin has no way to show you a "choose a MIDI device" dropdown via the host's own MIDI
+bus mechanism - so Warf doesn't rely on that mechanism at all.** An early version of this fix tried
+recategorising Warf as an "Instrument" (Studio One and some other hosts only expose MIDI-output
+*routing to another track* for Instrument-slot plugins, never Fx-slot ones) so its MIDI bus output
+could be picked up via Studio One's "Instrument Input" on a receiving track. That's a real,
+documented mechanism, but it meant Warf could no longer just be inserted as a plain effect on an
+audio track, which defeated the actual point - reverted.
 
-Audio still needs to get into an "Instrument" somehow, so Warf takes it via a bus literally named
-**`Sidechain`** (see `PluginProcessor.cpp`'s constructor) - the same convention vocoder plugins use.
-In Studio One: load Warf on an Instrument track, set that track's **Synth Source to Sidechain** and
-feed it audio, then on a separate MIDI/Instrument track set **Instrument Input** to Warf's track to
-receive the notes it detects. `WarfSynth` (below) exists so that receiving track has something to
-actually play without needing a third-party synth. Cubase, Bitwig, and REAPER support similar
-audio-in/Instrument-out patterns; the exact routing UI varies by host - check its docs. Ableton
-Live's own "audio to MIDI" is a separate, built-in feature and doesn't apply here.
+**What Warf actually does instead: it's a normal Fx-category effect again, and it opens a system
+MIDI port directly from inside the plugin**, exactly like a standalone app would
+(`juce::MidiOutput`, enumerated and picked from a **MIDI Output Device** dropdown right in Warf's
+own editor - see `PluginProcessor::getMidiOutputDeviceNames()`/`setMidiOutputDeviceByIndex()`).
+This works identically in every host, because it never depends on the host's own MIDI-routing UI at
+all. Insert Warf as an effect on your audio track like normal, open its editor, pick a MIDI output
+device. If you want that MIDI to land on a track *inside the same DAW* (rather than an external
+hardware synth), you need a virtual MIDI loopback - Windows has no built-in one, so install
+something like [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html), pick the loopMIDI
+port in Warf's dropdown, then set a MIDI/Instrument track's *input* to that same port in your DAW
+(a completely standard "listen to this MIDI input port" setting every DAW has - no special
+Instrument-Input trick needed). `WarfSynth` (below) exists so that receiving track has something to
+actually play without needing a third-party synth.
+
+Warf's VST3 MIDI output bus (`producesMidi() == true`) is still declared too, so hosts that *do*
+support routing an Fx's MIDI output elsewhere (Cubase, Bitwig, REAPER) get that for free with zero
+extra setup - the device picker is the one path guaranteed to work everywhere, not the only path.
 
 ## Architecture
 
@@ -46,18 +54,21 @@ Live's own "audio to MIDI" is a separate, built-in feature and doesn't apply her
   comment for the full state machine.
 - `src/MidiNoteUtils.h` — plain frequency↔MIDI-note math, no JUCE dependency.
 - `src/PluginProcessor.{h,cpp}` / `src/PluginEditor.{h,cpp}` — the JUCE plugin wrapper and a
-  minimal native GUI (live note/frequency readout + the global parameters below). Mono-sums the
-  `Sidechain` input bus for analysis; the `Output` bus is left silent (`getBusBuffer` + `.clear()`)
-  since Warf doesn't synthesise anything - see the "read this before building" note above for why
-  audio comes in via a bus named `Sidechain` rather than a normal main input.
+  minimal native GUI (live note/frequency readout, the MIDI Output Device picker, and the global
+  parameters below). Mono-sums whatever's on the main input bus for analysis; the input passes
+  through to the output dry and unmodified. Every generated note goes to both the host's own VST3
+  MIDI bus and, if one's selected, directly to a system MIDI port via `juce::MidiOutput` - see the
+  "read this before building" note above for why there are two paths.
 - `src/ParameterLayout.{h,cpp}` — the handful of genuinely host-automatable parameters: Sensitivity
   (a single friendly knob mapped internally onto confidence/tolerance/attack-speed), Gate
-  Threshold, Transpose, MIDI Channel, and a Fixed Velocity toggle + value.
+  Threshold, Transpose, MIDI Channel, and a Fixed Velocity toggle + value. The MIDI Output Device
+  selection is deliberately *not* one of these (it's a device choice, not something a DAW would
+  automate) - it's persisted separately, as an extra attribute on the saved state's XML.
 - `synth-src/` (`WarfSynth` target) — a small, deliberately unambitious companion instrument: one
   selectable oscillator waveform (`SynthVoice.cpp`'s `renderSample()`) through a `juce::ADSR`, built
   on `juce::Synthesiser`/`SynthesiserVoice` rather than anything from Warf's own engine. A plain
-  MIDI-in/audio-out Instrument, no audio input bus at all - load it on whichever track's Instrument
-  Input is set to receive Warf's output, purely so there's something to hear.
+  MIDI-in/audio-out Instrument, no audio input bus at all - load it on whichever track's MIDI input
+  is set to listen to the same port Warf is sending to.
 - `app.html` — a browser PWA with the same detection engine (a direct JS port of
   `PitchDetector.cpp` and `NoteTracker.cpp` — same algorithm, same state machine, kept in sync by
   hand since there's no shared code between C++ and JS). Two ways to use it:
@@ -144,15 +155,17 @@ build/WarfTests_artefacts/Debug/WarfTests.exe
 machine, and `SynthVoice`'s waveform/envelope behaviour). `Warf_VST3`, `WarfSynth_VST3`, and
 `app.html` build/render cleanly in both Debug and Release, and the Tauri desktop app builds clean
 too (`npm run tauri build`, both the `.msi` and NSIS `.exe` bundles) - the Release/bundle builds are
-what everything in `downloads/` was built from. Confirmed registered correctly in a real Studio One
-5 install both before and after the Instrument/Sidechain rework (see the note above - this is what
-an actual user hit and reported), and confirmed by launching the built `warf.exe` directly that
-`app.html` renders correctly inside the Tauri window (a `PrintWindow` capture, since there's no
-interactive desktop session in this dev loop). **Still not verified end-to-end against a real
-instrument or voice** — the automated tests check the algorithm against synthesized sine waves and
-synthetic pitch sequences, and nobody's confirmed inside an actual Studio One project that audio
-routed via Synth Source: Sidechain reaches Warf and that the resulting MIDI reaches a receiving
-track via Instrument Input. Try that real signal chain before trusting it for anything real.
+what everything in `downloads/` was built from. Confirmed via a real Studio One 5 install (checking
+`Plugins-en.settings` directly) that Warf registers as `category="AudioEffect"` - a normal
+audio-effect insert, as intended - and isn't blacklisted; also confirmed by launching the built
+`warf.exe` directly that `app.html` renders correctly inside the Tauri window (a `PrintWindow`
+capture, since there's no interactive desktop session in this dev loop). **The MIDI Output Device
+picker itself hasn't been exercised against a real output port from inside a host** - no DAW
+project has been opened in this dev loop to insert Warf, pick a device, and confirm MIDI actually
+arrives at the far end (e.g. via loopMIDI into a receiving track). The `juce::MidiOutput` calls it's
+built on are standard JUCE API used as documented, but "compiles and the plugin loads" isn't the
+same claim as "a note played into Warf reached a synth on another track." Try that real signal
+chain before trusting it for anything real.
 
 Not started / explicitly out of scope for this version: polyphonic (chord) detection, pitch bend /
 portamento output for slides, a waveform or pitch-history display, macOS/AU build.

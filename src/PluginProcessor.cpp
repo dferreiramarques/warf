@@ -3,17 +3,8 @@
 
 WarfAudioProcessor::WarfAudioProcessor()
     : AudioProcessor (BusesProperties()
-                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                           // Named "Sidechain", not "Input" - this is what makes hosts (Studio
-                           // One's "Synth Source: Sidechain" toggle, Cubase, Ableton) recognise it
-                           // as an auxiliary audio input on an Instrument-category plugin rather
-                           // than expecting a regular audio-effect input bus. Declaring Warf as an
-                           // Instrument (see VST3_CATEGORIES in CMakeLists.txt) rather than an Fx
-                           // is what makes its MIDI output selectable from another track's
-                           // "Instrument Input" dropdown in hosts that gate MIDI-output routing on
-                           // that category - Studio One notably blocks MIDI routing out of
-                           // audio-effect-slot plugins entirely.
-                           .withInput ("Sidechain", juce::AudioChannelSet::stereo(), true)),
+                           .withInput ("Input", juce::AudioChannelSet::stereo(), true)
+                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMETERS", createParameterLayout())
 {
 }
@@ -31,8 +22,6 @@ void WarfAudioProcessor::releaseResources()
 
 bool WarfAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    // There's only one input bus (Sidechain) and one output bus (Output), so "main" here just
-    // means those two.
     const auto in = layouts.getMainInputChannelSet();
     const auto out = layouts.getMainOutputChannelSet();
 
@@ -49,20 +38,16 @@ void WarfAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     // Nothing consumes incoming MIDI; only the events generated below should reach the host.
     midiMessages.clear();
 
-    // Warf doesn't synthesise anything - it only listens via the sidechain bus and emits MIDI, so
-    // the Output bus (what you'd actually hear on this track) stays silent. The source audio is
-    // still audible on whatever track it's actually coming from.
-    auto outputBuffer = getBusBuffer (buffer, false, 0);
-    outputBuffer.clear();
+    const auto numSamples = buffer.getNumSamples();
+    const auto numChannels = buffer.getNumChannels();
 
-    auto sidechainBuffer = getBusBuffer (buffer, true, 0);
-    const auto numSamples = sidechainBuffer.getNumSamples();
-    const auto numChannels = sidechainBuffer.getNumChannels();
-
+    // Mono-sum for analysis into scratch space without touching `buffer` - the input passes
+    // through to the output dry and unmodified, so a host can monitor the source while also
+    // routing this plugin's MIDI output elsewhere.
     monoScratch.setSize (1, numSamples, false, false, true);
     monoScratch.clear();
     for (int ch = 0; ch < numChannels; ++ch)
-        monoScratch.addFrom (0, 0, sidechainBuffer, ch, 0, numSamples, 1.0f / (float) numChannels);
+        monoScratch.addFrom (0, 0, buffer, ch, 0, numSamples, 1.0f / (float) numChannels);
 
     // Sensitivity (0=strict/clean, 1=fast/loose) maps to the underlying confidence/tolerance/
     // attack-hop knobs NoteTracker actually uses - see NoteTracker.h for what each one does.
@@ -88,6 +73,52 @@ void WarfAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         lastHopVoiced.store (hop.hasPitch);
         lastRms.store (hop.rms);
     });
+
+    // Forward every event just written to the host's own MIDI bus (works automatically in hosts
+    // that route an Fx's MIDI output elsewhere) to the directly-selected system MIDI device too
+    // (works in every host, including ones - like Studio One - that don't support that routing
+    // for an audio-effect-slot plugin at all). See the MIDI Output Device picker in the editor.
+    for (const auto metadata : midiMessages)
+        sendToSelectedMidiOutput (metadata.getMessage());
+}
+
+void WarfAudioProcessor::sendToSelectedMidiOutput (const juce::MidiMessage& message)
+{
+    // A short juce::CriticalSection lock on the audio thread isn't ideal real-time hygiene, but
+    // device selection changes are rare (a user picking from the dropdown), MIDI events here are
+    // sparse (note on/off, not per-sample), and juce::MidiOutput::sendMessageNow itself isn't
+    // guaranteed lock-free either - this is the same pragmatic tradeoff most "plugin sends MIDI to
+    // a system device" implementations make.
+    const juce::ScopedLock lock (midiOutputLock);
+    if (midiOutputDevice != nullptr)
+        midiOutputDevice->sendMessageNow (message);
+}
+
+juce::StringArray WarfAudioProcessor::getMidiOutputDeviceNames() const
+{
+    juce::StringArray names;
+    for (const auto& device : juce::MidiOutput::getAvailableDevices())
+        names.add (device.name);
+    return names;
+}
+
+void WarfAudioProcessor::setMidiOutputDeviceByIndex (int index)
+{
+    const auto devices = juce::MidiOutput::getAvailableDevices();
+
+    std::unique_ptr<juce::MidiOutput> newDevice;
+    juce::String newIdentifier;
+
+    if (index >= 0 && index < devices.size())
+    {
+        newDevice = juce::MidiOutput::openDevice (devices[index].identifier);
+        newIdentifier = devices[index].identifier;
+    }
+
+    const juce::ScopedLock lock (midiOutputLock);
+    midiOutputDevice = std::move (newDevice);
+    currentMidiOutputIndex = newDevice != nullptr ? index : -1;
+    lastSelectedMidiOutputIdentifier = newIdentifier;
 }
 
 juce::AudioProcessorEditor* WarfAudioProcessor::createEditor()
@@ -97,7 +128,9 @@ juce::AudioProcessorEditor* WarfAudioProcessor::createEditor()
 
 void WarfAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    const auto state = apvts.copyState();
+    auto state = apvts.copyState();
+    state.setProperty ("midiOutputDeviceIdentifier", lastSelectedMidiOutputIdentifier, nullptr);
+
     const std::unique_ptr<juce::XmlElement> xml (state.createXml());
     copyXmlToBinary (*xml, destData);
 }
@@ -106,8 +139,25 @@ void WarfAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     const std::unique_ptr<juce::XmlElement> xml (getXmlFromBinary (data, sizeInBytes));
 
-    if (xml != nullptr && xml->hasTagName (apvts.state.getType()))
-        apvts.replaceState (juce::ValueTree::fromXml (*xml));
+    if (xml == nullptr || ! xml->hasTagName (apvts.state.getType()))
+        return;
+
+    const auto tree = juce::ValueTree::fromXml (*xml);
+    apvts.replaceState (tree);
+
+    const auto savedIdentifier = tree.getProperty ("midiOutputDeviceIdentifier", "").toString();
+    if (savedIdentifier.isEmpty())
+        return;
+
+    const auto devices = juce::MidiOutput::getAvailableDevices();
+    for (int i = 0; i < devices.size(); ++i)
+    {
+        if (devices[i].identifier == savedIdentifier)
+        {
+            setMidiOutputDeviceByIndex (i);
+            break;
+        }
+    }
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

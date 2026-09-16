@@ -36,6 +36,15 @@ WarfAudioProcessorEditor::WarfAudioProcessorEditor (WarfAudioProcessor& p)
     statusLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
     addAndMakeVisible (statusLabel);
 
+    addAndMakeVisible (midiOutputDeviceBox);
+    addAndMakeVisible (midiOutputDeviceLabel);
+    midiOutputDeviceBox.onChange = [this]
+    {
+        const auto id = midiOutputDeviceBox.getSelectedId();
+        processor.setMidiOutputDeviceByIndex (id <= 1 ? -1 : id - 2);
+    };
+    refreshMidiOutputDeviceList();
+
     configureSlider (sensitivitySlider, *this);
     configureSlider (gateSlider, *this);
     configureSlider (transposeSlider, *this);
@@ -59,8 +68,8 @@ WarfAudioProcessorEditor::WarfAudioProcessorEditor (WarfAudioProcessor& p)
     // own "audio input muted" banner above this editor (JUCE's automatic feedback-loop guard for
     // an effect with both audio in and out) which a fixed 420x420 doesn't leave room for.
     setResizable (true, true);
-    setResizeLimits (360, 420, 700, 700);
-    setSize (420, 460);
+    setResizeLimits (360, 450, 700, 700);
+    setSize (420, 490);
     startTimerHz (20);
 }
 
@@ -91,6 +100,9 @@ void WarfAudioProcessorEditor::resized()
         area.removeFromTop (8);
     };
 
+    row (midiOutputDeviceLabel, midiOutputDeviceBox);
+    area.removeFromTop (8);
+
     row (sensitivityLabel, sensitivitySlider);
     row (gateLabel, gateSlider);
     row (transposeLabel, transposeSlider);
@@ -101,8 +113,29 @@ void WarfAudioProcessorEditor::resized()
     fixedVelocityValueSlider.setBounds (velocityRow);
 }
 
+void WarfAudioProcessorEditor::refreshMidiOutputDeviceList()
+{
+    const auto names = processor.getMidiOutputDeviceNames();
+    const auto currentIndex = processor.getMidiOutputDeviceIndex();
+
+    midiOutputDeviceBox.clear (juce::dontSendNotification);
+    midiOutputDeviceBox.addItem ("None", 1);
+    for (int i = 0; i < names.size(); ++i)
+        midiOutputDeviceBox.addItem (names[i], i + 2); // id 1 is reserved for "None"
+
+    midiOutputDeviceBox.setSelectedId (currentIndex < 0 ? 1 : currentIndex + 2, juce::dontSendNotification);
+}
+
 void WarfAudioProcessorEditor::timerCallback()
 {
+    // Devices can appear/disappear while the editor is open (e.g. starting loopMIDI) - re-check
+    // every ~3s (60 ticks at the 20Hz this timer runs at) rather than on every tick.
+    if (++midiDeviceRefreshCounter >= 60)
+    {
+        midiDeviceRefreshCounter = 0;
+        refreshMidiOutputDeviceList();
+    }
+
     if (processor.isLastHopVoiced())
     {
         const auto exactMidi = MidiNoteUtils::midiNoteFromFrequency (processor.getLastDetectedFrequencyHz());
