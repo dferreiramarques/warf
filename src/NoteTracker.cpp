@@ -21,62 +21,108 @@ void NoteTracker::prepare (const Settings& newSettings)
     reset();
 }
 
+void NoteTracker::setLiveSettings (const Settings& newSettings)
+{
+    if (settings.fastTracking != newSettings.fastTracking || settings.melodicRelease != newSettings.melodicRelease)
+    {
+        // A gap measured under the previous timing policy must not re-arm or cut the note
+        // when a mode is automated. Retain the sounding note itself.
+        silentHops = quietHops = 0;
+        articulationPending = false;
+        clearCandidate();
+    }
+    settings = newSettings;
+}
+
 void NoteTracker::reset()
 {
     noteIsSounding = false;
     currentMidiNote = -1;
     silentHops = 0;
+    quietHops = 0;
+    articulationPending = false;
+    clearCandidate();
+}
+
+void NoteTracker::clearCandidate()
+{
     candidateNote = -1;
     candidateStableHops = 0;
     candidateVelocityRms = 0.0f;
+    candidateGapHops = 0;
+    candidateExactMidi = 0.0;
 }
 
 void NoteTracker::processHop (const PitchDetector::Result& hop, int sampleOffsetInBlock, juce::MidiBuffer& midiOut)
 {
-    const bool voiced = hop.hasPitch && hop.confidence >= settings.minConfidence && hop.rms >= settings.noiseGate;
+    const float gateRms = settings.fastTracking && hop.recentRms >= 0.0f ? hop.recentRms : hop.rms;
+    const bool quiet = gateRms < settings.noiseGate;
+    const bool validPitch = hop.hasPitch && std::isfinite (hop.frequencyHz) && hop.frequencyHz > 0.0;
+    const double exactMidi = validPitch ? MidiNoteUtils::midiNoteFromFrequency (hop.frequencyHz)
+                                             + (double) settings.transposeSemitones : -1000.0;
+    const bool voiced = validPitch && exactMidi > -0.5 && exactMidi < 127.5
+                       && hop.confidence >= settings.minConfidence && ! quiet;
 
     if (! voiced)
     {
-        candidateNote = -1;
-        candidateStableHops = 0;
+        // One above-gate ambiguity may interrupt a legato candidate, but never counts as
+        // evidence. Silence and a second ambiguous hop discard it, preventing stale attacks.
+        if (! settings.fastTracking || quiet || ++candidateGapHops > 1)
+            clearCandidate();
+        quietHops = quiet ? std::min (quietHops + 1, std::max (settings.releaseHops, settings.quietRetriggerHops)) : 0;
+        if (settings.melodicRelease && noteIsSounding && quietHops >= settings.quietRetriggerHops)
+            articulationPending = true;
 
-        if (noteIsSounding && ++silentHops >= settings.releaseHops)
+        if (noteIsSounding)
+            ++silentHops;
+        // A noisy consonant or returning vowel may be above the gate before YIN recovers.
+        // Give it a bounded recovery hold; true consecutive silence gets the shorter timeout.
+        const bool releaseDue = settings.melodicRelease
+                                    ? quietHops >= settings.releaseHops || silentHops >= settings.maxUnvoicedHops
+                                    : silentHops >= settings.releaseHops;
+        if (noteIsSounding && releaseDue)
         {
             midiOut.addEvent (juce::MidiMessage::noteOff (settings.midiChannel, currentMidiNote), sampleOffsetInBlock);
             noteIsSounding = false;
             currentMidiNote = -1;
             silentHops = 0;
+            articulationPending = false;
+            clearCandidate();
         }
-
         return;
     }
 
-    silentHops = 0;
-
-    const auto exactMidi = MidiNoteUtils::midiNoteFromFrequency (hop.frequencyHz) + (double) settings.transposeSemitones;
     const auto nearestNote = (int) std::lround (exactMidi);
-
+    // Performance keeps the old note on during the gap. Only same-pitch recovery consumes
+    // the articulation latch; a different pitch still gets normal legato confirmation.
+    const bool articulated = settings.fastTracking
+                             && (settings.melodicRelease ? articulationPending && nearestNote == currentMidiNote
+                                                         : quietHops >= settings.quietRetriggerHops);
+    quietHops = 0;
+    silentHops = 0;
     if (nearestNote < 0 || nearestNote > 127)
         return;
 
-    if (noteIsSounding && nearestNote == currentMidiNote)
+    if (noteIsSounding && ! articulated
+        && (nearestNote == currentMidiNote
+            || (settings.fastTracking && std::abs (exactMidi - currentMidiNote) < 0.65)))
     {
-        // Same note continuing to sound - clear any unrelated pending-retrigger candidate.
-        candidateNote = -1;
-        candidateStableHops = 0;
+        clearCandidate();
         return;
     }
 
     const auto centsFromNearest = (exactMidi - (double) nearestNote) * 100.0;
     if (std::abs (centsFromNearest) > settings.pitchToleranceCents)
     {
-        // Too far from any semitone centre to trust yet (e.g. mid-slide/bend) - don't let it
-        // count as a stable hop, but don't treat it as unvoiced either.
-        candidateStableHops = 0;
+        // Keep at most one ambiguous hop for the SAME pending note, without incrementing it.
+        if (! settings.fastTracking || nearestNote != candidateNote || ++candidateGapHops > 1)
+            clearCandidate();
         return;
     }
 
-    if (nearestNote == candidateNote)
+    candidateGapHops = 0;
+    if (nearestNote == candidateNote
+        && (! settings.fastTracking || std::abs (exactMidi - candidateExactMidi) <= 0.30))
     {
         ++candidateStableHops;
         candidateVelocityRms = std::max (candidateVelocityRms, hop.rms);
@@ -88,7 +134,14 @@ void NoteTracker::processHop (const PitchDetector::Result& hop, int sampleOffset
         candidateVelocityRms = hop.rms;
     }
 
-    if (candidateStableHops >= settings.attackHops)
+    candidateExactMidi = exactMidi;
+
+    // Mixed old/new audio can produce a confidently intermediate semitone. Require two
+    // consistent observations for legato changes, including octave jumps. A new or clearly
+    // articulated attack remains single-hop; this adds one 5ms hop in Performance/Percussive.
+    const int requiredHops = settings.fastTracking && noteIsSounding && ! articulated
+                                ? std::max (2, settings.attackHops) : settings.attackHops;
+    if (candidateStableHops >= requiredHops)
     {
         if (noteIsSounding)
             midiOut.addEvent (juce::MidiMessage::noteOff (settings.midiChannel, currentMidiNote), sampleOffsetInBlock);
@@ -98,9 +151,8 @@ void NoteTracker::processHop (const PitchDetector::Result& hop, int sampleOffset
 
         noteIsSounding = true;
         currentMidiNote = candidateNote;
-        candidateNote = -1;
-        candidateStableHops = 0;
-        candidateVelocityRms = 0.0f;
+        articulationPending = false;
+        clearCandidate();
     }
 }
 

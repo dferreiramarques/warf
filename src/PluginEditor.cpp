@@ -45,6 +45,10 @@ WarfAudioProcessorEditor::WarfAudioProcessorEditor (WarfAudioProcessor& p)
     };
     refreshMidiOutputDeviceList();
 
+    trackingModeBox.addItemList ({ "Stable", "Performance", "Percussive" }, 1);
+    trackingModeBox.setTooltip ("Stable: original tracking. Performance: fast attacks, melodic gap hold. Percussive: short releases and rhythmic retriggers.");
+    addAndMakeVisible (trackingModeBox);
+    addAndMakeVisible (trackingModeLabel);
     configureSlider (sensitivitySlider, *this);
     configureSlider (gateSlider, *this);
     configureSlider (transposeSlider, *this);
@@ -57,6 +61,7 @@ WarfAudioProcessorEditor::WarfAudioProcessorEditor (WarfAudioProcessor& p)
     addAndMakeVisible (fixedVelocityToggle);
 
     auto& apvts = processor.getAPVTS();
+    trackingModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, ParameterIDs::trackingMode, trackingModeBox);
     sensitivityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, ParameterIDs::sensitivity, sensitivitySlider);
     gateAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, ParameterIDs::gateThresholdDb, gateSlider);
     transposeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, ParameterIDs::transpose, transposeSlider);
@@ -68,8 +73,8 @@ WarfAudioProcessorEditor::WarfAudioProcessorEditor (WarfAudioProcessor& p)
     // own "audio input muted" banner above this editor (JUCE's automatic feedback-loop guard for
     // an effect with both audio in and out) which a fixed 420x420 doesn't leave room for.
     setResizable (true, true);
-    setResizeLimits (360, 450, 700, 700);
-    setSize (420, 490);
+    setResizeLimits (360, 482, 700, 732);
+    setSize (420, 522);
     startTimerHz (20);
 }
 
@@ -103,6 +108,7 @@ void WarfAudioProcessorEditor::resized()
     row (midiOutputDeviceLabel, midiOutputDeviceBox);
     area.removeFromTop (8);
 
+    row (trackingModeLabel, trackingModeBox);
     row (sensitivityLabel, sensitivitySlider);
     row (gateLabel, gateSlider);
     row (transposeLabel, transposeSlider);

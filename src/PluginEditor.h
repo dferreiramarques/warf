@@ -34,6 +34,10 @@ private:
     juce::Label midiOutputDeviceLabel { {}, "MIDI Output Device" };
     void refreshMidiOutputDeviceList();
 
+    juce::ComboBox trackingModeBox;
+    juce::Label trackingModeLabel { {}, "Tracking Mode" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> trackingModeAttachment;
+
     juce::Slider sensitivitySlider;
     juce::Label sensitivityLabel { {}, "Sensitivity" };
     juce::Slider gateSlider;

@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "TrackingSettings.h"
 
 WarfAudioProcessor::WarfAudioProcessor()
     : AudioProcessor (BusesProperties()
@@ -53,12 +54,10 @@ void WarfAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     // attack-hop knobs NoteTracker actually uses - see NoteTracker.h for what each one does.
     const auto sensitivity = apvts.getRawParameterValue (ParameterIDs::sensitivity)->load();
 
-    NoteTracker::Settings settings;
+    const auto mode = static_cast<TrackingMode> ((int) apvts.getRawParameterValue (ParameterIDs::trackingMode)->load());
+    pitchDetector.setFastTracking (mode != TrackingMode::stable);
+    auto settings = makeTrackingSettings (sensitivity, mode);
     settings.noiseGate = juce::Decibels::decibelsToGain (apvts.getRawParameterValue (ParameterIDs::gateThresholdDb)->load());
-    settings.minConfidence = (double) juce::jmap (sensitivity, 0.0f, 1.0f, 0.95f, 0.75f);
-    settings.pitchToleranceCents = (double) juce::jmap (sensitivity, 0.0f, 1.0f, 20.0f, 50.0f);
-    settings.attackHops = sensitivity < 0.5f ? 4 : 2;
-    settings.releaseHops = 4;
     settings.transposeSemitones = (int) apvts.getRawParameterValue (ParameterIDs::transpose)->load();
     settings.midiChannel = (int) apvts.getRawParameterValue (ParameterIDs::midiChannel)->load();
     settings.fixedVelocity = apvts.getRawParameterValue (ParameterIDs::fixedVelocity)->load() > 0.5f;
@@ -127,6 +126,7 @@ juce::AudioProcessorEditor* WarfAudioProcessor::createEditor()
 void WarfAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
+    state.setProperty (TrackingModeState::versionProperty, TrackingModeState::currentVersion, nullptr);
     state.setProperty ("midiOutputDeviceIdentifier", lastSelectedMidiOutputIdentifier, nullptr);
 
     const std::unique_ptr<juce::XmlElement> xml (state.createXml());
@@ -140,7 +140,9 @@ void WarfAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (xml == nullptr || ! xml->hasTagName (apvts.state.getType()))
         return;
 
-    const auto tree = juce::ValueTree::fromXml (*xml);
+    auto tree = juce::ValueTree::fromXml (*xml);
+    // Preserve both pre-mode projects and the former Fast mode's aggressive behavior.
+    migrateTrackingModeState (tree);
     apvts.replaceState (tree);
 
     const auto savedIdentifier = tree.getProperty ("midiOutputDeviceIdentifier", "").toString();

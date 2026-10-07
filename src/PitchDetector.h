@@ -11,9 +11,10 @@
 //
 // `windowSize` (and therefore latency and CPU cost) is derived from `minFrequencyHz`: tracking
 // lower notes needs a longer window to see at least two full periods. At the default 60Hz floor
-// and a 44.1kHz sample rate this works out to roughly a 46ms window / 23ms hop - noticeable but
-// acceptable for a first version; see NoteTracker for how onset/offset debouncing adds a little
-// more on top of that.
+// and a 44.1kHz sample rate, Stable uses a 46ms window / 11.6ms hop. Performance and Percussive
+// share an unpadded two-period window (~33ms at 60Hz) and 5ms hops; this implementation uses
+// no FFT and does not require power-of-two padding. Both modes anchor YIN comparisons in the
+// newest half-window to favour recent audio.
 class PitchDetector
 {
 public:
@@ -22,13 +23,17 @@ public:
         bool hasPitch = false;   // false when confidence was too low - unvoiced, silence, or noise
         double frequencyHz = 0.0;
         double confidence = 0.0; // 0..1, higher means more certain
+        float recentRms = -1.0f; // latest hop RMS; negative means unavailable (synthetic/legacy callers)
         float rms = 0.0f;        // RMS of the analysed window - used for the noise gate and velocity
     };
 
     void prepare (double sampleRate, double minFrequencyHz = 60.0);
 
-    int getHopSize() const { return hopSize; }
-    int getWindowSize() const { return windowSize; }
+    // Selects the shared Performance/Percussive detector configuration when true, Stable
+    // when false. Buffers/history are retained, with no allocation or warm-up reset.
+    void setFastTracking (bool fast) { fastTracking = fast; }
+    int getHopSize() const { return fastTracking ? fastHopSize : hopSize; }
+    int getWindowSize() const { return fastTracking ? fastWindowSize : windowSize; }
 
     // Pushes `numSamples` of mono audio. Calls `callback(result, sampleIndexWithinThisCall)` once
     // per hop boundary crossed - zero or more times depending on how many hops fit in this call -
@@ -46,7 +51,7 @@ public:
             if (samplesWritten < windowSize)
                 ++samplesWritten;
 
-            if (samplesSinceLastHop >= hopSize && samplesWritten >= windowSize)
+            if (samplesSinceLastHop >= getHopSize() && samplesWritten >= getWindowSize())
             {
                 samplesSinceLastHop = 0;
                 callback (analyseCurrentWindow(), i);
@@ -63,6 +68,9 @@ private:
 
     int windowSize = 2048;
     int hopSize = 512;
+    int fastWindowSize = 1604;
+    int fastHopSize = 240;
+    bool fastTracking = false;
     int writePos = 0;
     int samplesSinceLastHop = 0;
     int samplesWritten = 0;

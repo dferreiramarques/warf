@@ -4,6 +4,7 @@
 
 namespace ParameterIDs
 {
+    inline constexpr const char* trackingMode = "trackingMode";
     inline constexpr const char* sensitivity = "sensitivity";
     inline constexpr const char* gateThresholdDb = "gateThresholdDb";
     inline constexpr const char* transpose = "transpose";
@@ -13,3 +14,13 @@ namespace ParameterIDs
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+namespace TrackingModeState
+{
+    inline constexpr const char* versionProperty = "trackingModeVersion";
+    inline constexpr int currentVersion = 2;
+}
+
+// Pre-mode states restore Stable; unversioned Fast=1 restores Percussive=2.
+// Existing parameter IDs/properties survive; migration is idempotent.
+void migrateTrackingModeState (juce::ValueTree& state);

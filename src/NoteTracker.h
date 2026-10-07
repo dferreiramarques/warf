@@ -18,6 +18,12 @@
 //  - voiced, a note IS sounding, new pitch stably lands on a DIFFERENT note for `attackHops`
 //    hops: retrigger (note-off then note-on) - this is what lets a legato phrase produce separate
 //    MIDI notes without a silence gap between them.
+// Performance and Percussive use single-hop attacks with 15-cent boundary hysteresis and two
+// consistent observations for legato changes. One ambiguous candidate hop can be bridged
+// without counting it. Percussive uses a short release and two-quiet-hop articulation. Performance holds
+// the old note through brief dropouts, latches qualified quiet articulation until pitch returns,
+// and separates consecutive quiet release from the bounded unvoiced recovery timeout.
+// Confidence-only gaps do not arm articulation. Full-window RMS still drives velocity.
 class NoteTracker
 {
 public:
@@ -26,7 +32,11 @@ public:
         float noiseGate = 0.01f;            // RMS gate, linear (~ -40dBFS)
         double minConfidence = 0.85;
         int attackHops = 3;                 // consecutive stable hops required to (re)trigger a note
-        int releaseHops = 4;                // consecutive silent/unvoiced hops required to end a note
+        bool fastTracking = false;         // boundary hysteresis, octave guard, recent-level gate
+        bool melodicRelease = false;       // hold through consonants; defer retrigger until recovery
+        int maxUnvoicedHops = 15;           // bounded recovery hold in Performance (5ms hops)
+        int quietRetriggerHops = 2;         // quiet observations needed to arm articulation
+        int releaseHops = 4;                // unvoiced release; consecutive quiet only in Performance
         double pitchToleranceCents = 35.0;  // how far a hop's pitch may drift and still count as "the same note"
         int transposeSemitones = 0;
         int midiChannel = 1;
@@ -37,10 +47,10 @@ public:
     // Sets the settings and clears all tracking state - call once from prepareToPlay.
     void prepare (const Settings& newSettings);
 
-    // Updates settings without touching tracking state (currently-sounding note, attack/release
-    // counters) - call every block so host automation of e.g. transpose or the gate takes effect
-    // immediately without cutting the note being tracked.
-    void setLiveSettings (const Settings& newSettings) { settings = newSettings; }
+    // Updates settings while retaining the sounding note. A mode change clears pending
+    // candidates, articulation and timing counters. Call every block so host automation of
+    // e.g. transpose or the gate takes effect immediately without cutting the tracked note.
+    void setLiveSettings (const Settings& newSettings);
 
     // Called once per PitchDetector hop. Appends any resulting note-on/off messages to `midiOut`,
     // timestamped at `sampleOffsetInBlock`.
@@ -51,14 +61,19 @@ public:
 
 private:
     void reset();
+    void clearCandidate();
 
     Settings settings;
 
     bool noteIsSounding = false;
     int currentMidiNote = -1;
     int silentHops = 0;
+    int quietHops = 0;
+    bool articulationPending = false;
+    int candidateGapHops = 0;
 
     int candidateNote = -1;
     int candidateStableHops = 0;
     float candidateVelocityRms = 0.0f;
+    double candidateExactMidi = 0.0;
 };

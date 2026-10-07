@@ -22,6 +22,11 @@ void PitchDetector::prepare (double newSampleRate, double minFrequencyHz)
     const auto maxPeriodSamples = (int) std::ceil (sampleRate / minFrequencyHz);
     windowSize = nextPowerOfTwo (maxPeriodSamples * 2);
     hopSize = windowSize / 4;
+    // Include interpolation neighbours at the lowest supported period. Retain the original
+    // allocation/range in Stable, including unusual caller-supplied frequency floors.
+    fastWindowSize = std::min (windowSize, maxPeriodSamples * 2 + 4);
+    fastHopSize = std::max (1, (int) std::lround (sampleRate * 0.005));
+    fastTracking = false;
 
     ringBuffer.assign ((size_t) windowSize, 0.0f);
     analysisWindow.assign ((size_t) windowSize, 0.0f);
@@ -34,15 +39,23 @@ void PitchDetector::prepare (double newSampleRate, double minFrequencyHz)
 
 PitchDetector::Result PitchDetector::analyseCurrentWindow()
 {
-    for (int i = 0; i < windowSize; ++i)
-        analysisWindow[(size_t) i] = ringBuffer[(size_t) ((writePos + i) % windowSize)];
+    const int activeWindow = getWindowSize();
+    for (int i = 0; i < activeWindow; ++i)
+        analysisWindow[(size_t) i] = ringBuffer[(size_t) ((writePos + windowSize - activeWindow + i) % windowSize)];
 
     double sumSquares = 0.0;
-    for (float s : analysisWindow)
-        sumSquares += (double) s * (double) s;
-    const auto rms = (float) std::sqrt (sumSquares / (double) windowSize);
+    double recentSquares = 0.0;
+    const int recentSamples = std::min (activeWindow, getHopSize());
+    for (int i = 0; i < activeWindow; ++i)
+    {
+        const double s = analysisWindow[(size_t) i];
+        sumSquares += s * s;
+        if (i >= activeWindow - recentSamples)
+            recentSquares += s * s;
+    }
+    const auto rms = (float) std::sqrt (sumSquares / (double) activeWindow);
 
-    const auto tauMax = (int) cmndScratch.size();
+    const auto tauMax = activeWindow / 2;
 
     // Step 1+2 combined: difference function d(tau), accumulated straight into the cumulative
     // mean normalised difference function d'(tau) = d(tau) * tau / sum(d(1..tau)) so there's no
@@ -54,7 +67,9 @@ PitchDetector::Result PitchDetector::analyseCurrentWindow()
         double diff = 0.0;
         for (int j = 0; j < tauMax; ++j)
         {
-            const auto delta = (double) analysisWindow[(size_t) j] - (double) analysisWindow[(size_t) (j + tau)];
+            const int a = fastTracking ? activeWindow - 1 - j : j;
+            const int b = fastTracking ? a - tau : j + tau;
+            const auto delta = (double) analysisWindow[(size_t) a] - (double) analysisWindow[(size_t) b];
             diff += delta * delta;
         }
 
@@ -78,12 +93,13 @@ PitchDetector::Result PitchDetector::analyseCurrentWindow()
 
     Result result;
     result.rms = rms;
+    result.recentRms = (float) std::sqrt (recentSquares / (double) recentSamples);
 
     if (tauEstimate <= 0)
     {
         // Nothing crossed the threshold - report the best minimum found anyway (as a confidence
         // figure only) so a caller could log/display it, but don't claim a pitch.
-        const auto best = std::min_element (cmndScratch.begin() + 2, cmndScratch.end() - 1);
+        const auto best = std::min_element (cmndScratch.begin() + 2, cmndScratch.begin() + tauMax - 1);
         result.confidence = best != cmndScratch.end() ? std::clamp (1.0 - (double) *best, 0.0, 1.0) : 0.0;
         result.hasPitch = false;
         return result;
