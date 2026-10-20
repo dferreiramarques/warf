@@ -25,6 +25,7 @@ void NoteTracker::reset()
 {
     noteIsSounding = false;
     currentMidiNote = -1;
+    currentMidiChannel = 1;
     silentHops = 0;
     candidateNote = -1;
     candidateStableHops = 0;
@@ -42,7 +43,7 @@ void NoteTracker::processHop (const PitchDetector::Result& hop, int sampleOffset
 
         if (noteIsSounding && ++silentHops >= settings.releaseHops)
         {
-            midiOut.addEvent (juce::MidiMessage::noteOff (settings.midiChannel, currentMidiNote), sampleOffsetInBlock);
+            midiOut.addEvent (juce::MidiMessage::noteOff (currentMidiChannel, currentMidiNote), sampleOffsetInBlock);
             noteIsSounding = false;
             currentMidiNote = -1;
             silentHops = 0;
@@ -91,13 +92,14 @@ void NoteTracker::processHop (const PitchDetector::Result& hop, int sampleOffset
     if (candidateStableHops >= settings.attackHops)
     {
         if (noteIsSounding)
-            midiOut.addEvent (juce::MidiMessage::noteOff (settings.midiChannel, currentMidiNote), sampleOffsetInBlock);
+            midiOut.addEvent (juce::MidiMessage::noteOff (currentMidiChannel, currentMidiNote), sampleOffsetInBlock);
 
         const auto velocity = settings.fixedVelocity ? settings.fixedVelocityValue : velocityFromRms (candidateVelocityRms);
         midiOut.addEvent (juce::MidiMessage::noteOn (settings.midiChannel, candidateNote, velocity), sampleOffsetInBlock);
 
         noteIsSounding = true;
         currentMidiNote = candidateNote;
+        currentMidiChannel = settings.midiChannel;
         candidateNote = -1;
         candidateStableHops = 0;
         candidateVelocityRms = 0.0f;
@@ -107,7 +109,7 @@ void NoteTracker::processHop (const PitchDetector::Result& hop, int sampleOffset
 void NoteTracker::allNotesOff (juce::MidiBuffer& midiOut, int sampleOffsetInBlock)
 {
     if (noteIsSounding)
-        midiOut.addEvent (juce::MidiMessage::noteOff (settings.midiChannel, currentMidiNote), sampleOffsetInBlock);
+        midiOut.addEvent (juce::MidiMessage::noteOff (currentMidiChannel, currentMidiNote), sampleOffsetInBlock);
 
     reset();
 }

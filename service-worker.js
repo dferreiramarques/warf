@@ -1,7 +1,7 @@
 // Warf Service Worker
 // Enables offline functionality and caching for the PWA.
 
-const CACHE_NAME = 'warf-v1';
+const CACHE_NAME = 'warf-v2';
 const urlsToCache = [
   './app.html',
   './index.html',
@@ -41,6 +41,28 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   // Only handle GET requests
   if (event.request.method !== 'GET') {
+    return;
+  }
+
+  // Pages (app.html, index.html) go network-first, so a deployed fix reaches installed PWAs on
+  // the next online visit instead of waiting for CACHE_NAME to be bumped; the cache is only the
+  // offline fallback for them.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        if (response && response.status === 200) {
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
+        }
+        return response;
+      }).catch(() => caches.match(event.request).then((cachedResponse) => {
+        return cachedResponse || new Response('Offline - Please check your connection', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: new Headers({ 'Content-Type': 'text/plain' })
+        });
+      }))
+    );
     return;
   }
 

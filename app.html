@@ -496,16 +496,19 @@
             };
         }
 
+        // Channel the sounding live note was started on - its note-off goes there too, even if the
+        // MIDI Channel field changed in the meantime, or the note would hang on the old channel.
+        // One value is enough: the tracker is monophonic.
+        let liveNoteChannel = 0;
         function sendNoteOn(note, velocity) {
             if (midiOutput) {
-                const channel = readSettings().midiChannel - 1;
-                midiOutput.send([0x90 | channel, note, velocity]);
+                liveNoteChannel = readSettings().midiChannel - 1;
+                midiOutput.send([0x90 | liveNoteChannel, note, velocity]);
             }
         }
         function sendNoteOff(note) {
             if (midiOutput) {
-                const channel = readSettings().midiChannel - 1;
-                midiOutput.send([0x80 | channel, note, 0]);
+                midiOutput.send([0x80 | liveNoteChannel, note, 0]);
             }
         }
 
@@ -707,6 +710,8 @@
         }
 
         document.getElementById('midiOutputSelect').addEventListener('change', (e) => {
+            // End a sounding note on the port it was sent to before switching, or it hangs there.
+            noteTracker.allNotesOff(sendNoteOff);
             midiOutput = (midiAccess && e.target.value) ? midiAccess.outputs.get(e.target.value) : null;
         });
 

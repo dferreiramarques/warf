@@ -189,6 +189,37 @@ public:
             expectEquals (recorded.noteOffs, 1);
             expectEquals (recorded.lastNoteOff, 69);
         }
+
+        beginTest ("note-off goes to the channel the note started on, even after a channel change");
+        {
+            NoteTracker tracker;
+            NoteTracker::Settings settings;
+            settings.attackHops = 2;
+            settings.releaseHops = 2;
+            settings.midiChannel = 3;
+            tracker.prepare (settings);
+
+            juce::MidiBuffer buf;
+            for (int i = 0; i < 3; ++i)
+                tracker.processHop (voicedHop (440.0), 0, buf);
+
+            settings.midiChannel = 7;
+            tracker.setLiveSettings (settings);
+
+            for (int i = 0; i < 2; ++i)
+                tracker.processHop (silentHop(), 0, buf);
+
+            int noteOnChannel = -1, noteOffChannel = -1;
+            for (const auto metadata : buf)
+            {
+                const auto msg = metadata.getMessage();
+                if (msg.isNoteOn())  noteOnChannel = msg.getChannel();
+                if (msg.isNoteOff()) noteOffChannel = msg.getChannel();
+            }
+
+            expectEquals (noteOnChannel, 3);
+            expectEquals (noteOffChannel, 3);
+        }
     }
 };
 

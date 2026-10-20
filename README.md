@@ -32,16 +32,17 @@ MIDI output paths**, both active at once:
    is a free one) that something else is listening to. Independent of path 1 - works even in hosts
    that don't support Instrument Input-style routing at all.
 
-**Known open issue: an unexplained extra "piano" sound reported alongside the intended synth**,
-matching Windows' built-in Microsoft GS Wavetable Synth's default patch (Acoustic Grand Piano) -
-observed with the MIDI Output Device picker set to "None," which ruled that path out as the source.
-A first fix attempt removed the VST3 MIDI bus entirely on the theory that Studio One auto-previews
-an Fx's declared MIDI output through its own default GM softsynth - this did stop the reported
-sound, but it also broke Instrument Input routing, which turned out to be load-bearing for the
-user's actual setup, so it was reverted. **The real source of the phantom piano is still
-unconfirmed** - re-verify whether it's still present with the MIDI bus restored, and if so, look
-for a Studio One-side per-track MIDI monitoring/output-device setting (separate from Warf's own
-picker) before touching this again.
+**The "phantom piano" (likely cause found, still to be confirmed in Studio One):** an extra sound
+matching Windows' built-in Microsoft GS Wavetable Synth's default patch (Acoustic Grand Piano) was
+reported alongside the intended synth, with the MIDI Output Device picker apparently set to "None."
+That "None" was misleading: `setMidiOutputDeviceByIndex()` read `newDevice` *after*
+`std::move`-ing it, so the stored index was always -1 and the editor always showed "None" - even
+while a device was open and receiving every note. The device identifier was still saved in the
+project state, so picking the GS Wavetable Synth once (often first in the list) meant it was
+silently reopened on every project load. Fixed: the picker now shows the real selection. To
+confirm, open an affected project with the fixed build: the picker should now show "Microsoft GS
+Wavetable Synth", and setting it to "None" should stop the piano. (An earlier attempt removed the
+VST3 MIDI bus instead, which broke Instrument Input routing and was reverted - leave the bus alone.)
 
 ## Architecture
 

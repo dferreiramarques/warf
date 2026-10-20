@@ -56,6 +56,9 @@ private:
 
     bool noteIsSounding = false;
     int currentMidiNote = -1;
+    // Channel the sounding note was started on - its note-off must go there too, even if the
+    // MIDI Channel parameter changed in the meantime, or the note would hang on the old channel.
+    int currentMidiChannel = 1;
     int silentHops = 0;
 
     int candidateNote = -1;

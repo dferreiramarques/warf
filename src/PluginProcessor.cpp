@@ -12,12 +12,24 @@ WarfAudioProcessor::WarfAudioProcessor()
 void WarfAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     pitchDetector.prepare (sampleRate);
-    noteTracker.prepare (NoteTracker::Settings {});
     monoScratch.setSize (1, samplesPerBlock);
+
+    // Don't reset noteTracker here directly: hosts can call prepareToPlay again (sample rate or
+    // block size change) while a note is still sounding, and a plain reset would forget it without
+    // ever sending its note-off. The next processBlock sends that note-off, then resets.
+    flushNotesOnNextBlock = true;
 }
 
 void WarfAudioProcessor::releaseResources()
 {
+    // processBlock won't run again until the next prepareToPlay, so a still-sounding note's
+    // note-off can't go out through the VST3 bus from here - but the system MIDI device would
+    // otherwise hang on it indefinitely, so send it there directly. The audio thread is stopped
+    // at this point, so touching noteTracker from here is safe.
+    juce::MidiBuffer noteOffs;
+    noteTracker.allNotesOff (noteOffs);
+    for (const auto metadata : noteOffs)
+        sendToSelectedMidiOutput (metadata.getMessage());
 }
 
 bool WarfAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -37,6 +49,9 @@ void WarfAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
     // Nothing consumes incoming MIDI; only the events generated below should reach the host.
     midiMessages.clear();
+
+    if (flushNotesOnNextBlock.exchange (false))
+        noteTracker.allNotesOff (midiMessages);
 
     const auto numSamples = buffer.getNumSamples();
     const auto numChannels = buffer.getNumChannels();
@@ -80,6 +95,18 @@ void WarfAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         sendToSelectedMidiOutput (metadata.getMessage());
 }
 
+void WarfAudioProcessor::processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer& midiMessages)
+{
+    // Audio is left untouched (dry pass-through, same as when active). Bypassing mid-note must
+    // still end that note, on both output paths - otherwise it hangs until un-bypassed. A no-op
+    // once nothing is sounding.
+    midiMessages.clear();
+    noteTracker.allNotesOff (midiMessages);
+
+    for (const auto metadata : midiMessages)
+        sendToSelectedMidiOutput (metadata.getMessage());
+}
+
 void WarfAudioProcessor::sendToSelectedMidiOutput (const juce::MidiMessage& message)
 {
     // A short juce::CriticalSection lock on the audio thread isn't ideal real-time hygiene, but
@@ -110,12 +137,21 @@ void WarfAudioProcessor::setMidiOutputDeviceByIndex (int index)
     if (index >= 0 && index < devices.size())
     {
         newDevice = juce::MidiOutput::openDevice (devices[index].identifier);
-        newIdentifier = devices[index].identifier;
+
+        // Only persist a device that actually opened - otherwise a failed open would be silently
+        // retried on every project reload.
+        if (newDevice != nullptr)
+            newIdentifier = devices[index].identifier;
     }
+
+    // Read before the move below: once moved-from, newDevice is always null, which used to leave
+    // currentMidiOutputIndex stuck at -1 - the editor then showed "None" while a restored device
+    // (e.g. Microsoft GS Wavetable Synth, the "phantom piano") was still open and receiving notes.
+    const auto opened = newDevice != nullptr;
 
     const juce::ScopedLock lock (midiOutputLock);
     midiOutputDevice = std::move (newDevice);
-    currentMidiOutputIndex = newDevice != nullptr ? index : -1;
+    currentMidiOutputIndex = opened ? index : -1;
     lastSelectedMidiOutputIdentifier = newIdentifier;
 }
 

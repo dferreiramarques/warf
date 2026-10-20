@@ -18,6 +18,7 @@ public:
     void releaseResources() override;
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -73,6 +74,10 @@ private:
     std::atomic<double> lastFrequencyHz { 0.0 };
     std::atomic<bool> lastHopVoiced { false };
     std::atomic<float> lastRms { 0.0f };
+
+    // Set by prepareToPlay; the next processBlock sends any still-sounding note's note-off and
+    // resets the tracker.
+    std::atomic<bool> flushNotesOnNextBlock { true };
 
     juce::CriticalSection midiOutputLock;
     std::unique_ptr<juce::MidiOutput> midiOutputDevice; // guarded by midiOutputLock
