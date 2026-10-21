@@ -1,0 +1,134 @@
+# Builds and publishes a release when a version tag (v0.1.1, ...) is pushed, on a GitHub-hosted
+# Windows runner - the only place the C++ gets compiled (see build.yml). Steps: tests, both VST3s,
+# the Inno Setup installer, the raw .vst3 zip and the Tauri desktop app; then a GitHub release with
+# those files, and a commit to master that adds them to downloads/ and points index.html at them
+# (warf.monco.io serves master). Any failing step stops the run before anything is published.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read and check the version
+        id: ver
+        run: |
+          ver=$(sed -n 's/^project(WarfPlugin VERSION \([0-9.]*\)).*/\1/p' CMakeLists.txt | tr -d '\r')
+          [ -n "$ver" ] || { echo "::error::No version found in CMakeLists.txt"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$ver" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match CMakeLists.txt version $ver"; exit 1
+          fi
+          for f in installer/Warf.iss package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml; do
+            grep -q "\"$ver\"" "$f" || { echo "::error::$f is not at version $ver"; exit 1; }
+          done
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      # JUCE is pulled by FetchContent here; CMake picks the runner's Visual Studio.
+      - name: Configure
+        run: cmake -B build -A x64
+
+      - name: Build and run the tests
+        run: |
+          cmake --build build --config Release --target WarfTests
+          ./build/WarfTests_artefacts/Release/WarfTests.exe
+
+      - name: Build the plugins
+        run: |
+          cmake --build build --config Release --target Warf_VST3
+          cmake --build build --config Release --target WarfSynth_VST3
+
+      - name: Build the installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
+          & $iscc installer\Warf.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Zip the raw VST3 folders
+        shell: pwsh
+        run: Compress-Archive -Force -DestinationPath 'downloads/Warf_${{ steps.ver.outputs.version }}_Beta_VST3_x64.zip' -LiteralPath 'build/Warf_artefacts/Release/VST3/Warf (Beta).vst3', 'build/WarfSynth_artefacts/Release/VST3/Warf Synth (Beta).vst3'
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build the desktop app (Tauri)
+        run: |
+          npm install --no-audit --no-fund
+          npm run tauri build
+
+      - name: Collect the desktop app
+        run: |
+          v='${{ steps.ver.outputs.version }}'
+          cp "src-tauri/target/release/bundle/nsis/Warf_${v}_x64-setup.exe" downloads/
+          cp "src-tauri/target/release/bundle/msi/Warf_${v}_x64_en-US.msi" downloads/
+
+      - name: Point index.html at the new files
+        shell: python
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          import os, pathlib, re
+          new = os.environ["VER"]
+          page = pathlib.Path("index.html")
+          s = page.read_bytes().decode("utf-8")
+          old = re.search(r"downloads/Warf_([0-9.]+)_Beta_VST3_x64-setup\.exe", s).group(1)
+          s = s.replace(f"Warf_{old}_", f"Warf_{new}_").replace(f"v{old} Beta", f"v{new} Beta")
+          page.write_bytes(s.encode("utf-8"))
+          missing = [f for f in re.findall(r'href="(downloads/[^"]+)"', s) if not pathlib.Path(f).is_file()]
+          if missing:
+              raise SystemExit(f"index.html links to missing files: {missing}")
+          print(f"index.html now points at {new} (was {old})")
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: warf-${{ steps.ver.outputs.version }}
+          path: downloads/Warf_${{ steps.ver.outputs.version }}_*
+          if-no-files-found: error
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          files=(downloads/Warf_"${VER}"_*)
+          if gh release view "v$VER" >/dev/null 2>&1; then
+            gh release upload "v$VER" "${files[@]}" --clobber
+          else
+            gh release create "v$VER" "${files[@]}" --title "Warf $VER (Beta)" \
+              --notes "Windows x64: VST3 installer (Warf + optional Warf Synth), raw .vst3 zip, and the desktop app (.exe or .msi). Also at https://warf.monco.io"
+          fi
+
+      - name: Add the files to downloads/ on master (warf.monco.io)
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --depth=1 origin master
+          git checkout -B master FETCH_HEAD
+          git add index.html downloads/Warf_"${VER}"_*
+          if git diff --cached --quiet; then echo "Nothing new to commit"; exit 0; fi
+          git commit -m "Release $VER: installer, VST3 zip and desktop app"
+          git push origin master
+
+      - name: Ask GitHub Pages to rebuild
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/$GITHUB_REPOSITORY/pages/builds" >/dev/null || echo "::notice::Pages rebuild request not accepted; the site updates on its next build"
