@@ -70,7 +70,9 @@ void WarfAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
     NoteTracker::Settings settings;
     settings.noiseGate = juce::Decibels::decibelsToGain (apvts.getRawParameterValue (ParameterIDs::gateThresholdDb)->load());
-    settings.minConfidence = (double) juce::jmap (sensitivity, 0.0f, 1.0f, 0.95f, 0.75f);
+    // 0.95..0.85: PitchDetector never reports a pitch below 0.85 confidence (its 0.15 YIN
+    // threshold), so anything lower would make the top half of the knob do nothing here.
+    settings.minConfidence = (double) juce::jmap (sensitivity, 0.0f, 1.0f, 0.95f, 0.85f);
     settings.pitchToleranceCents = (double) juce::jmap (sensitivity, 0.0f, 1.0f, 20.0f, 50.0f);
     settings.attackHops = sensitivity < 0.5f ? 4 : 2;
     settings.releaseHops = 4;

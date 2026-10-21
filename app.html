@@ -485,7 +485,9 @@
             const sensitivity = parseFloat(document.getElementById('sensitivity').value);
             return {
                 noiseGate: Math.pow(10, parseFloat(document.getElementById('gate').value) / 20),
-                minConfidence: sensitivity < 0.001 ? 0.95 : 0.95 - sensitivity * 0.20,
+                // 0.95..0.85: YIN never reports a pitch below 0.85 confidence (its 0.15 threshold),
+                // so anything lower would make the top half of the slider do nothing here.
+                minConfidence: 0.95 - sensitivity * 0.10,
                 pitchToleranceCents: 20 + sensitivity * 30,
                 attackHops: sensitivity < 0.5 ? 4 : 2,
                 releaseHops: 4,

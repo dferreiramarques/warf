@@ -1,0 +1,39 @@
+# Builds both VST3 plugins and runs the WarfTests engine suite on every push/PR - the only place
+# the C++ gets compiled when the local machine has no MSVC toolset. The built plugins are uploaded
+# as a workflow artifact (not a release) for quick manual testing in a DAW.
+name: Build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # JUCE is pulled by FetchContent (shallow clone) during this step.
+      - name: Configure
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build tests
+        run: cmake --build build --config Release --target WarfTests
+
+      - name: Run tests
+        run: build/WarfTests_artefacts/Release/WarfTests.exe
+
+      # COPY_PLUGIN_AFTER_BUILD installs into Common Files\VST3 too - harmless on the runner.
+      - name: Build plugins
+        run: |
+          cmake --build build --config Release --target Warf_VST3
+          cmake --build build --config Release --target WarfSynth_VST3
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: warf-vst3-${{ github.sha }}
+          path: |
+            build/Warf_artefacts/Release/VST3/
+            build/WarfSynth_artefacts/Release/VST3/

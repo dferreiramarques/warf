@@ -105,14 +105,17 @@ VST3 MIDI bus instead, which broke Instrument Input routing and was reverted - l
 
 ## Prerequisites (same recipe as Kerf Lite)
 
-1. An MSVC C++ toolset + Windows SDK (VS Build Tools 2019 or newer, or full Visual Studio).
+1. An MSVC C++ toolset + Windows SDK (VS Build Tools 2019 or newer, or full Visual Studio). With
+   Build Tools, the **"Desktop development with C++"** workload must be ticked in the Visual Studio
+   Installer - a bare Build Tools install has no `cl.exe`, and CMake then reports "could not find
+   any instance of Visual Studio".
 2. CMake 3.22+: `winget install --id Kitware.CMake -e`.
 
 ## Build (VST3, Debug)
 
 From a shell where `cmake` and `cl` are both reachable (a Developer Command Prompt, or full paths):
 ```
-cmake -B build -G "Visual Studio 16 2019" -A x64
+cmake -B build -G "Visual Studio 16 2019" -A x64   # or "Visual Studio 17 2022", whichever is installed
 cmake --build build --config Debug --target Warf_VST3
 cmake --build build --config Debug --target WarfSynth_VST3
 ```
@@ -154,9 +157,13 @@ cmake --build build --config Debug --target WarfTests
 build/WarfTests_artefacts/Debug/WarfTests.exe
 ```
 
+CI (`.github/workflows/build.yml`) does the same on every push to `master` and every PR, on a
+GitHub-hosted Windows runner: Release build, `WarfTests`, then both VST3s, uploaded as a workflow
+artifact for quick testing in a DAW.
+
 ## Status
 
-`WarfTests` passes (35/35 assertions: `PitchDetector` accuracy, `NoteTracker`'s onset/offset state
+`WarfTests` passed 35/35 assertions as of v0.1.0 (`PitchDetector` accuracy, `NoteTracker`'s onset/offset state
 machine, and `SynthVoice`'s waveform/envelope behaviour). `Warf_VST3`, `WarfSynth_VST3`, and
 `app.html` build/render cleanly in both Debug and Release, and the Tauri desktop app builds clean
 too (`npm run tauri build`, both the `.msi` and NSIS `.exe` bundles) - the Release/bundle builds are
