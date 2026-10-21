@@ -146,6 +146,23 @@ cmake --build build --config Release --target WarfSynth_VST3
 ```
 Output lands in `downloads/Warf_<version>_Beta_VST3_x64-setup.exe`.
 
+## Releasing
+
+Release builds come from CI, not from a local machine. Bump the version in `CMakeLists.txt`,
+`installer/Warf.iss`, `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`
+(plus the `warf` entry in `src-tauri/Cargo.lock`), commit, then push a matching tag:
+
+```
+git tag -a v0.1.1 -m "Warf 0.1.1 (Beta)"
+git push origin master v0.1.1
+```
+
+`.github/workflows/release.yml` then runs on a GitHub-hosted Windows runner: tests, both VST3s, the
+Inno Setup installer, the raw .vst3 zip and the Tauri desktop app. It publishes them as a GitHub
+release and commits them to `downloads/`, with `index.html` pointing at the new version - which is
+what warf.monco.io serves. If any step fails, nothing is published and the site keeps the previous
+version.
+
 ## Tests (no DAW needed)
 
 `WarfTests` is a standalone console app running the engine's `juce::UnitTest` suite —
@@ -163,6 +180,10 @@ artifact for quick testing in a DAW.
 
 ## Status
 
+**0.1.1** fixes the MIDI Output Device picker always showing "None" (the likely cause of the
+phantom piano below), ends stuck notes, and makes the top half of Sensitivity take effect. From this
+version on, release builds come from CI - see [Releasing](#releasing).
+
 `WarfTests` passed 35/35 assertions as of v0.1.0 (`PitchDetector` accuracy, `NoteTracker`'s onset/offset state
 machine, and `SynthVoice`'s waveform/envelope behaviour). `Warf_VST3`, `WarfSynth_VST3`, and
 `app.html` build/render cleanly in both Debug and Release, and the Tauri desktop app builds clean
@@ -175,9 +196,9 @@ Tauri window (a `PrintWindow` capture, since there's no interactive desktop sess
 loop). This has genuinely been exercised end-to-end by a real user, not just built and assumed
 working: Instrument Input routing from Warf's track into a synth (Mojito, Warf Synth) has been
 confirmed working when the VST3 MIDI bus is declared, and confirmed broken when it isn't - that's
-exactly why it's back. **Still open: an extra "piano" sound reported alongside the intended synth**,
-not yet root-caused - see the "read this before building" note above for the current understanding
-and what to check next before changing this area again. The MIDI Output Device picker's direct
+exactly why it's back. **The extra "piano" sound reported alongside the intended synth** has a likely cause, fixed in
+0.1.1 (the picker bug in the "read this before building" note above) - still to be confirmed in
+Studio One before calling it closed. The MIDI Output Device picker's direct
 `juce::MidiOutput` path hasn't been separately exercised against a real output port.
 
 Not started / explicitly out of scope for this version: polyphonic (chord) detection, pitch bend /

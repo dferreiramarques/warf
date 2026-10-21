@@ -1,6 +1,6 @@
 {
   "name": "warf",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Warf — free audio-to-MIDI converter: VST3 plugin, browser PWA, and desktop app",
   "main": "app.html",
   "scripts": {
